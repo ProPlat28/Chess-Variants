@@ -348,7 +348,7 @@ body.four .player{height:auto;min-height:36px}
   <div class="home-in">
     <div class="home-top"><img id="homeLogo" alt=""><h1>Chess Variants</h1></div>
     <p class="home-sub">Classic chess, the variants from Lichess and Chess.com, the ancient games chess grew from, and a few new ideas. Every one has bots from Easy to Impossible, or play friends on the same device.</p>
-    <section class="online"><h2 class="vgroup" style="margin-top:0">Play online</h2><div id="onlineBox"></div></section>
+    <section class="online" hidden><h2 class="vgroup" style="margin-top:0">Play online</h2><div id="onlineBox"></div></section>
     <div class="vgrid" id="vgrid"></div>
     <p class="home-foot">Variants marked <span class="tag sf">Stockfish</span> use Stockfish on Impossible; the rest use the strongest built-in engine. Chess.com also hosts dozens of community variants, such as Spell Chess, Seirawan and Capablanca, that are not included here.</p>
   </div>
@@ -1596,7 +1596,7 @@ function nSeats(v){return SEAT_LABELS[v]?4:2;}
 })();
 function renderOnline(){
   const box=$('onlineBox');if(!box)return;
-  if(!NET.ready){box.innerHTML='<div class="on-off">Online play works when this page is open on claude.ai while you are signed in. Share the page with a friend (Share, at the top), then both of you open it.</div>';return;}
+  const sec=box.closest('section.online');if(!NET.ready){if(sec)sec.hidden=true;box.innerHTML='';return;}if(sec)sec.hidden=false;
   if(document.activeElement&&(document.activeElement.id==='nickIn'||document.activeElement.id==='codeIn'))return;
   box.innerHTML='<div class="on-row"><label class="on-lab" for="nickIn">Your name</label><input id="nickIn" maxlength="20" placeholder="Player" value="'+esc(cfg.nick||'')+'"></div>'+
     '<div class="on-row"><input id="codeIn" maxlength="8" placeholder="Room code" autocapitalize="off" autocomplete="off"><button class="btn" id="codeJoin">Join</button><button class="btn primary" id="hostBtn">Host a game</button></div>'+
