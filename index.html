@@ -1587,9 +1587,55 @@ function cleanNick(s){return String(s||'').replace(/[\u0000-\u001f\u007f-\u009fâ
 function myNick(){return cleanNick(cfg.nick)||'Player';}
 function okVariant(v){return typeof v==='string'&&!!VINFO[v]&&!NO_ONLINE.includes(v);}
 function nSeats(v){return SEAT_LABELS[v]?4:2;}
+// Online rooms outside claude.ai: same API as window.claude.use('room'), relayed through a public MQTT broker.
+const MQ_URL='wss://public.cloud.shiftr.io:443',MQ_BASE='proplat28-chess-variants/v1/',MQ_LIB='https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.10.1/mqtt.min.js';
+function loadMqtt(){return new Promise((res,rej)=>{if(window.mqtt)return res(window.mqtt);const s=document.createElement('script');s.src=MQ_LIB;s.async=true;s.onload=()=>window.mqtt?res(window.mqtt):rej(new Error('mqtt'));s.onerror=()=>rej(new Error('mqtt'));document.head.appendChild(s);});}
+function mqttRoom(lib){
+  return{
+    presence(){return Promise.resolve();},
+    join(name){return new Promise((resolve,reject)=>{
+      const id='p'+Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
+      const topic=MQ_BASE+String(name).replace(/[^a-z0-9-]/gi,'')+'/';
+      const mine={},others=new Map(),subs=new Set();
+      let done=false,left=false,hb=0,offT=0;
+      const c=lib.connect(MQ_URL,{username:'public',password:'public',clientId:'cv_'+id,keepalive:30,clean:true,reconnectPeriod:2000,connectTimeout:8000,
+        will:{topic:topic+id,payload:'',retain:true,qos:1}});
+      const pub=()=>new Promise(r=>{if(left||!c.connected)return r();c.publish(topic+id,JSON.stringify({t:Date.now(),p:mine}),{retain:true,qos:1},()=>r());});
+      const fire=()=>subs.forEach(s=>{try{s.cb();}catch(e){}});
+      c.on('message',(t,buf)=>{
+        if(!t.startsWith(topic))return;const pid=t.slice(topic.length);if(!pid||pid===id||pid.includes('/'))return;
+        let m=null;try{const s=buf.toString();m=s?JSON.parse(s):null;}catch(e){}
+        if(m&&m.p&&typeof m.p==='object'&&Date.now()-(+m.t||0)<15*60e3)others.set(pid,m.p);else others.delete(pid);
+        fire();
+      });
+      c.on('connect',()=>{
+        clearTimeout(offT);offT=0;
+        c.subscribe(topic+'+',{qos:1},err=>{
+          if(err){if(!done){done=true;try{c.end(true);}catch(e){}reject(err);}return;}
+          pub();if(!done){done=true;resolve(g);}
+        });
+      });
+      c.on('offline',()=>{if(!done||offT||left)return;offT=setTimeout(()=>subs.forEach(s=>{try{s.lost&&s.lost();}catch(e){}}),30000);});
+      c.on('error',()=>{});
+      setTimeout(()=>{if(!done){done=true;try{c.end(true);}catch(e){}reject(new Error('timeout'));}},10000);
+      hb=setInterval(()=>{pub();},60000);
+      const g={
+        presence(patch){Object.assign(mine,patch||{});return pub();},
+        peers(){const a=[{peer:id,sameTab:true,isMe:true,presence:Object.assign({},mine)}];others.forEach((p,k)=>a.push({peer:k,sameTab:false,isMe:false,presence:p}));return a;},
+        onPeers(cb,lost){const s={cb,lost};subs.add(s);setTimeout(()=>{if(subs.has(s))try{cb();}catch(e){}},0);return()=>subs.delete(s);},
+        leave(){
+          if(left)return Promise.resolve();left=true;clearInterval(hb);clearTimeout(offT);subs.clear();
+          return new Promise(r=>{let fin=false;const end=()=>{if(fin)return;fin=true;try{c.end(true);}catch(e){}r();};
+            try{c.publish(topic+id,'',{retain:true,qos:1},end);}catch(e){end();}setTimeout(end,1500);});
+        }
+      };
+    });}
+  };
+}
 (async()=>{
   try{
-    const r=window.claude&&window.claude.use?await window.claude.use('room'):null;
+    let r=null;try{r=window.claude&&window.claude.use?await window.claude.use('room'):null;}catch(e){r=null;}
+    if(!r)r=mqttRoom(await loadMqtt());
     if(!r){NET.ready=false;renderOnline();return;}
     NET.room=r;NET.ready=true;renderOnline();
   }catch(e){NET.ready=false;renderOnline();}
