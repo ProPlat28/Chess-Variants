@@ -43,6 +43,8 @@ const VARIANTS={
   bughouse:{checks:true,zh:true,bh:true,no50:true},
   checkless:{checks:true,checkless:true,insuf:true},
   secret:{checks:true,secret:true,insuf:true},
+  impostor:{checks:true,imp:true,insuf:true},
+  mirror:{checks:true,mirror:true,insuf:true},
   progressive:{checks:true,prog:true,insuf:true},
   chatgpt:{checks:true,gpt:true},
   setup:{checks:true,setup:true,insuf:true,fen:'8/8/8/8/8/8/8/8[KQRRBBNNPPPPPPPPkqrrbbnnpppppppp] w - - 0 1'}
@@ -174,6 +176,7 @@ class Pos{
       return !this.attacked(k,us^1);
     }
     if(v.setup){const ek=this.kings[us^1];if(ek>=0&&this.attacked(ek,us))return false;}
+    if(v.imp){const lu=this.u[this.u.length-1];if(lu&&lu.imp){const ek=this.kings[us^1];if(ek>=0&&this.attacked(ek,us))return false;}}
     if(k<0)return true;
     if(this.attacked(k,us^1))return false;
     if(v.checkless){const ek=this.kings[us^1];if(ek>=0&&this.attacked(ek,us)&&this.hasEscape(us^1))return false;}
@@ -192,14 +195,13 @@ class Pos{
       return out;
     }
     const promos=v.anti?[Q,R,B,N,K]:v.anc?[Q]:[Q,N,R,B];
-    for(let sq=0;sq<120;sq++){
-      if(sq&0x88){sq+=7;continue;}
-      const p=b[sq];if(!p||(p>>3)!==us)continue;
+    const one=(sq)=>{
+      const p=b[sq];
       const t=p&7;
       if(t===P&&v.secret&&sq===this.sec[us]){
         // the hidden queen: moves like a queen, but may not take the king while hidden
         for(let i=0;i<8;i++){const d=KO[i];let t2=sq+d;while(!(t2&0x88)){const q=b[t2];if(!q){if(!caps)out.push(sq|t2<<7);}else{if((q>>3)===them&&(q&7)!==K)out.push(sq|t2<<7);break;}t2+=d;}}
-        continue;
+        return;
       }
       if(t===P){
         const d=us?16:-16,promR=v.makruk?(us?5:2):(us?7:0),row=sq>>4;
@@ -237,6 +239,23 @@ class Pos{
           while(!(t2&0x88)){const q=b[t2];if(!q){if(!caps)out.push(sq|t2<<7);}else{if((q>>3)===them)out.push(sq|t2<<7);break;}t2+=d;}
         }
       }
+    };
+    for(let sq=0;sq<120;sq++){
+      if(sq&0x88){sq+=7;continue;}
+      const p=b[sq];if(!p||p===DUCK||(p>>3)!==us)continue;
+      one(sq);
+    }
+    if(v.imp){
+      // impostor: an enemy piece (not the king) this side secretly controls; it moves as one of ours
+      const s=this.sec[us],q=s>=0?b[s]:0;
+      if(q&&q!==DUCK&&(q>>3)===them&&(q&7)!==K){
+        const n0=out.length;b[s]=(q&7)|(us?BL:0);one(s);b[s]=q;
+        let k=n0;
+        for(let i=n0;i<out.length;i++){const m=out[i],fl=(m>>>17)&15,tq=b[(m>>7)&127];
+          // the switching move may capture, but not the king, and cannot promote or double step
+          if((m>>14)&7||(fl&(F_DOUBLE|F_EP))||(tq&7)===K)continue;out[k++]=m;}
+        out.length=k;
+      }
     }
     if(v.zh&&!caps){
       for(let t=1;t<=5;t++){
@@ -249,6 +268,8 @@ class Pos{
         }
       }
     }
+    // Mirror Bot: a king can be left in check for a moment, but never captured
+    if(v.mirror){let k=0;for(let i=0;i<out.length;i++){const m=out[i];if(!((m>>>17)&(F_CASTLE|F_DROP))&&(b[(m>>7)&127]&7)===K&&b[(m>>7)&127]!==DUCK)continue;out[k++]=m;}out.length=k;}
     return out;
   }
   genCastle(out,kf){
@@ -278,12 +299,16 @@ class Pos{
     this.h1^=ZC1[this.castle];this.h2^=ZC2[this.castle];
     if(this.ep>=0){this.h1^=ZE1[this.ep];this.h2^=ZE2[this.ep];}
     let newEp=-1;
-    if(fl&F_DROP){
+    if((fl&F_DROP)&&(m&127)===7){
+      // Mirror Bot's copied capture: an enemy piece simply vanishes
+      const cap=b[to];u.cap=cap;u.capSq=to;if(cap){this.x(cap,to);b[to]=0;}this.castle&=this.CM[to];this.half=0;
+    }else if(fl&F_DROP){
       const t=m&127,p=t|ub;b[to]=p;this.x(p,to);this.pockAdd(us,t,-1);this.prom[to]=0;this.half=v.setup?0:this.half+1;if(t===K)this.kings[us]=to;
     }else if(fl&F_CASTLE){
       const kf=m&127,rf=to,base=us?0:112,side=(rf&7)>(kf&7)?0:1,kd=base+(side?2:6),rd=base+(side?3:5);
       this.x(K|ub,kf);this.x(R|ub,rf);b[kf]=0;b[rf]=0;b[kd]=K|ub;b[rd]=R|ub;this.x(K|ub,kd);this.x(R|ub,rd);
       this.kings[us]=kd;this.castle&=us?~12:~3;this.half++;
+      if(this.v.imp&&this.sec[them]===rf)this.setSec(them,rd);
     }else{
       const from=m&127,p=b[from],pr=(m>>14)&7;u.p=p;
       let capSq=to;if(fl&F_EP)capSq=to+(us?-16:16);
@@ -292,6 +317,8 @@ class Pos{
       this.x(p,from);b[from]=0;
       if(v.secret&&cap&&capSq===this.sec[them])this.setSec(them,-1);
       if(v.secret&&cap&&capSq===this.pend[them])this.setPend(them,-1);
+      const isImp=v.imp&&from===this.sec[us]&&(p>>3)===them;
+      if(v.imp&&cap&&capSq===this.sec[us])this.setSec(us,-1);
       if(cap){
         u.cap=cap;u.capSq=capSq;this.x(cap,capSq);b[capSq]=0;
         if(v.zh){if(!v.bh)this.pockAdd(us,u.pc?P:(cap&7),1);this.prom[capSq]=0;}
@@ -307,8 +334,9 @@ class Pos{
         if((p&7)===K)this.kings[us]=-1;
       }else{
         const wasSec=v.secret&&from===this.sec[us]&&(p&7)===P;
-        const np=pr?(pr|ub):p;
+        const np=pr?(pr|ub):isImp?((p&7)|ub):p;
         if(wasSec){this.setSec(us,-1);if(!pr)this.setPend(us,to);}
+        if(isImp){this.setSec(us,-1);u.imp=1;}else if(v.imp&&from===this.sec[them])this.setSec(them,to);
         b[to]=np;this.x(np,to);
         if(v.zh){this.prom[to]=pr?1:u.pf;this.prom[from]=0;}
         if((p&7)===K&&!v.anti)this.kings[us]=to;
@@ -344,7 +372,8 @@ class Pos{
     const ub=us?BL:0,to=(m>>7)&127,fl=(m>>>17)&15,dk=(m>>>21)&127;
     if(dk){b[this.duck]=0;if(u.duck>=0)b[u.duck]=DUCK;}
     this.duck=u.duck;
-    if(fl&F_DROP){b[to]=0;this.pock[us*8+(m&127)]++;}
+    if((fl&F_DROP)&&(m&127)===7){b[to]=u.cap;}
+    else if(fl&F_DROP){b[to]=0;this.pock[us*8+(m&127)]++;}
     else if(fl&F_CASTLE){
       const kf=m&127,rf=to,base=us?0:112,side=(rf&7)>(kf&7)?0:1;
       b[base+(side?2:6)]=0;b[base+(side?3:5)]=0;b[kf]=K|ub;b[rf]=R|ub;
@@ -459,7 +488,8 @@ class Pos{
     L=L||this.legal();
     const to=(m>>7)&127,pr=(m>>14)&7,fl=(m>>>17)&15,dk=(m>>>21)&127,base=m&((1<<21)-1);
     const b=this.b;let s;
-    if(fl&F_DROP)s=(m&127)===P?'P@'+sqName(to):'.PNBRQK'[m&127]+'@'+sqName(to);
+    if((fl&F_DROP)&&(m&127)===7)s='🪞x'+'.PNBRQK'[b[to]&7]+sqName(to);
+    else if(fl&F_DROP)s=(m&127)===P?'P@'+sqName(to):'.PNBRQK'[m&127]+'@'+sqName(to);
     else if(fl&F_CASTLE)s=(to&7)>((m&127)&7)?'O-O':'O-O-O';
     else{
       const from=m&127,p=b[from],t=p&7,cap=this.isCap(m);
@@ -486,7 +516,8 @@ class Pos{
   }
   uci(m){
     const to=(m>>7)&127,pr=(m>>14)&7,fl=(m>>>17)&15,dk=(m>>>21)&127;let s;
-    if(fl&F_DROP)s=PCH[m&127].toUpperCase()+'@'+sqName(to);
+    if((fl&F_DROP)&&(m&127)===7)s='X@'+sqName(to);
+    else if(fl&F_DROP)s=PCH[m&127].toUpperCase()+'@'+sqName(to);
     else if(fl&F_CASTLE&&!this.v.c960){const kf=m&127,base=this.turn?0:112;s=sqName(kf)+sqName(base+((to&7)>(kf&7)?6:2));}
     else s=sqName(m&127)+sqName(to)+(pr?PCH[pr]:'');
     if(dk)s+=','+sqName(dk-1);
@@ -549,6 +580,12 @@ function evaluate(pos){
   if(v.zh||(v.setup&&pos.inSetup()))phase=24;
   let sc=(mg*phase+eg*(24-phase))/24;
   if(v.zh){for(let t=1;t<=5;t++)sc+=(pos.pock[t]-pos.pock[8+t])*VAL[t]*0.9;}
+  if(v.imp){
+    // an unused impostor is worth more early on, so bots keep it hidden in the opening
+    // (switching swings about 2x its value; early it is only worth it with a big capture)
+    const f=pos.full<=10?2.6:pos.full>=25?0.6:2.6-(pos.full-10)*(2/15);
+    for(let c=0;c<2;c++){const s=pos.sec[c];if(s>=0&&b[s]&&(b[s]>>3)!==c){const w=VAL[b[s]&7]*f;sc+=c?-w:w;}}
+  }
   if(v.secret)sc+=(pos.sec[0]>=0?1000:0)-(pos.sec[1]>=0?1000:0)+(pos.pend[0]>=0?790:0)-(pos.pend[1]>=0?790:0);
   if(v.setup){for(let t=1;t<=5;t++)sc+=(pos.pock[t]-pos.pock[8+t])*(VAL[t]+20);}
   if(v.three){const bon=[0,140,420,1000];sc+=bon[pos.chk[0]]-bon[pos.chk[1]];}
@@ -560,6 +597,107 @@ function evaluate(pos){
   }
   sc|=0;
   return pos.turn?-sc:sc;
+}
+
+const BOOK_LINES=['e2e4 e7e5 g1f3 b8c6 f1b5 a7a6 b5a4 g8f6 e1g1 f8e7 f1e1 b7b5 a4b3 d7d6 c2c3 e8g8',
+'e2e4 e7e5 g1f3 b8c6 f1b5 g8f6 e1g1 f6e4 d2d4 e4d6 b5c6 d7c6 d4e5 d6f5',
+'e2e4 e7e5 g1f3 b8c6 f1c4 f8c5 c2c3 g8f6 d2d3 d7d6 e1g1 e8g8',
+'e2e4 e7e5 g1f3 b8c6 f1c4 g8f6 d2d3 f8e7 e1g1 e8g8',
+'e2e4 e7e5 g1f3 b8c6 d2d4 e5d4 f3d4 g8f6 d4c6 b7c6 e4e5 d8e7',
+'e2e4 e7e5 g1f3 b8c6 b1c3 g8f6 f1b5 f8b4 e1g1 e8g8',
+'e2e4 e7e5 g1f3 g8f6 f3e5 d7d6 e5f3 f6e4 d2d4 d6d5 f1d3',
+'e2e4 e7e5 g1f3 d7d6 d2d4 e5d4 f3d4 g8f6 b1c3 f8e7',
+'e2e4 e7e5 b1c3 g8f6 g1f3 b8c6 d2d4 e5d4 f3d4 f8b4',
+'e2e4 e7e5 f1c4 g8f6 d2d3 b8c6 g1f3 f8e7',
+'e2e4 e7e5 f1c4 b8c6 d1h5? g7g6 h5f3 g8f6',
+'e2e4 e7e5 d1h5? b8c6 f1c4 g7g6 h5f3 g8f6',
+'e2e4 e7e5 f2f4 e5f4 g1f3 d7d6 d2d4 g7g5',
+'e2e4 c7c5 g1f3 d7d6 d2d4 c5d4 f3d4 g8f6 b1c3 a7a6 c1e3 e7e5 d4b3 c8e6',
+'e2e4 c7c5 g1f3 b8c6 d2d4 c5d4 f3d4 g8f6 b1c3 e7e5 d4b5 d7d6',
+'e2e4 c7c5 g1f3 e7e6 d2d4 c5d4 f3d4 b8c6 b1c3 d8c7',
+'e2e4 c7c5 c2c3 g8f6 e4e5 f6d5 d2d4 c5d4 g1f3 b8c6',
+'e2e4 c7c5 b1c3 b8c6 g2g3 g7g6 f1g2 f8g7 d2d3 d7d6',
+'e2e4 e7e6 d2d4 d7d5 b1c3 g8f6 c1g5 f8e7 e4e5 f6d7 g5e7 d8e7',
+'e2e4 e7e6 d2d4 d7d5 e4e5 c7c5 c2c3 b8c6 g1f3 d8b6',
+'e2e4 e7e6 d2d4 d7d5 b1d2 c7c5 g1f3 b8c6',
+'e2e4 c7c6 d2d4 d7d5 b1c3 d5e4 c3e4 c8f5 e4g3 f5g6 h2h4 h7h6',
+'e2e4 c7c6 d2d4 d7d5 e4e5 c8f5 g1f3 e7e6 f1e2 c6c5',
+'e2e4 d7d5 e4d5 d8d5 b1c3 d5a5 d2d4 g8f6 g1f3 c8f5',
+'e2e4 d7d5 e4d5 g8f6 d2d4 f6d5 g1f3 g7g6',
+'e2e4 d7d6 d2d4 g8f6 b1c3 g7g6 g1f3 f8g7 f1e2 e8g8 e1g1',
+'e2e4 g7g6 d2d4 f8g7 b1c3 d7d6 g1f3 g8f6',
+'e2e4 g8f6 e4e5 f6d5 d2d4 d7d6 g1f3 c8g4',
+'e2e4 b8c6? d2d4 d7d5 b1c3 d5e4 d4d5 c6e5',
+'e2e4 b7b6? d2d4 c8b7 f1d3 e7e6 g1f3 c7c5',
+'e2e4 a7a6? d2d4 e7e6 g1f3 d7d5',
+'e2e4 h7h6? d2d4 e7e5 d4e5 b8c6',
+'e2e4 f7f6? d2d4 e7e6 g1f3',
+'d2d4 d7d5 c2c4 e7e6 b1c3 g8f6 c1g5 f8e7 e2e3 e8g8 g1f3 h7h6',
+'d2d4 d7d5 c2c4 d5c4 g1f3 g8f6 e2e3 e7e6 f1c4 c7c5 e1g1 a7a6',
+'d2d4 d7d5 c2c4 c7c6 g1f3 g8f6 b1c3 d5c4 a2a4 c8f5',
+'d2d4 d7d5 c1f4 g8f6 e2e3 e7e6 g1f3 c7c5 c2c3 b8c6 b1d2 f8d6',
+'d2d4 d7d5 g1f3 g8f6 e2e3 e7e6 f1d3 c7c5 c2c3 b8c6',
+'d2d4 g8f6 c2c4 g7g6 b1c3 f8g7 e2e4 d7d6 g1f3 e8g8 f1e2 e7e5 e1g1 b8c6',
+'d2d4 g8f6 c2c4 e7e6 b1c3 f8b4 e2e3 e8g8 f1d3 d7d5 g1f3 c7c5',
+'d2d4 g8f6 c2c4 e7e6 g1f3 b7b6 g2g3 c8b7 f1g2 f8e7 e1g1 e8g8',
+'d2d4 g8f6 c2c4 g7g6 b1c3 d7d5 c4d5 f6d5 e2e4 d5c3 b2c3 f8g7',
+'d2d4 g8f6 c2c4 e7e6 g2g3 d7d5 f1g2 f8e7 g1f3 e8g8 e1g1 d5c4',
+'d2d4 g8f6 c1f4 d7d5 e2e3 c7c5 c2c3 b8c6',
+'d2d4 f7f5 g2g3 g8f6 f1g2 e7e6 g1f3 f8e7 e1g1 e8g8',
+'d2d4 e7e6 c2c4 g8f6 b1c3 f8b4',
+'d2d4 c7c5 d4d5 e7e5 e2e4 d7d6',
+'d2d4 b8c6? g1f3 d7d5 c2c4 c8g4',
+'d2d4 e7e5? d4e5 b8c6 g1f3 d8e7',
+'c2c4 e7e5 b1c3 g8f6 g1f3 b8c6 g2g3 d7d5 c4d5 f6d5',
+'c2c4 c7c5 g1f3 g8f6 b1c3 b8c6 g2g3 g7g6 f1g2 f8g7',
+'c2c4 g8f6 b1c3 e7e6 e2e4 d7d5 e4e5 d5d4',
+'g1f3 d7d5 g2g3 g8f6 f1g2 e7e6 e1g1 f8e7 d2d3 e8g8',
+'g1f3 g8f6 c2c4 e7e6 b1c3 d7d5 d2d4 f8e7',
+'b1c3? d7d5 e2e4 d5d4 c3e2 e7e5',
+'b2b3? e7e5 c1b2 b8c6 e2e3 g8f6',
+'g2g3? d7d5 f1g2 g8f6 g1f3 c7c6',
+'f2f4? d7d5 g1f3 g8f6 e2e3 g7g6',
+'e2e3? e7e5 d2d4 e5d4 e3d4 d7d5',
+'d2d3? d7d5 g1f3 g8f6 g2g3 c7c5',
+'a2a3? e7e5 e2e4 g8f6 b1c3 d7d5',
+'h2h3? d7d5 d2d4 g8f6 g1f3 e7e6',
+'b2b4? e7e5 c1b2 f8b4 b2e5 g8f6',
+'g2g4? d7d5 f1g2 c7c6 h2h3 e7e5',
+'a2a4? e7e5 e2e4 g8f6 b1c3 d7d5',
+'h2h4? d7d5 d2d4 c7c5 e2e3 b8c6',
+'b1a3? e7e5 e2e4 g8f6',
+'g1h3? d7d5 d2d4 c8h3 g2h3 e7e6',
+'c2c3? e7e5 d2d4 e5d4 c3d4 d7d5',
+'f2f3? e7e5 e2e4 g8f6'];
+
+// opening book: position (board, side, castling) -> book moves with weights. Built once, on first use.
+let BOOK=null;
+function bookKey(p){const f=p.fen().split(' ');return f[0].replace(/\[.*\]$/,'')+' '+f[1]+' '+f[2];}
+function buildBook(){
+  BOOK=new Map();
+  for(const line of BOOK_LINES){
+    const p=new Pos('standard').load(START);
+    // a move ending in ? is only there to reach a position the bot should know how to answer
+    for(const w of line.split(' ')){
+      const u=w.replace('?',''),m=p.fromUci(u);if(!m)break;
+      if(u===w){const k=bookKey(p);let e=BOOK.get(k);if(!e){e={};BOOK.set(k,e);}e[u]=(e[u]||0)+1;}
+      p.make(m);
+    }
+  }
+}
+// variants whose opening plays like normal chess
+function bookOk(v){return !(v.anti||v.atomic||v.anc||v.duck||v.prog||v.horde||v.racing||v.gpt||v.setup);}
+function bookMove(pos,root,maxPly){
+  if(!bookOk(pos.v))return 0;
+  const ply=(pos.full-1)*2+pos.turn;if(ply>=maxPly)return 0;
+  if(pos.v.zh)for(let i=0;i<16;i++)if(pos.pock[i])return 0;
+  if(!BOOK)buildBook();
+  const e=BOOK.get(bookKey(pos));if(!e)return 0;
+  const cand=[];let tot=0;
+  for(const m of root){const u=pos.uci(m);if(e[u]){cand.push([m,e[u]]);tot+=e[u];}}
+  if(!cand.length)return 0;
+  let r=Math.random()*tot;for(const [m,w] of cand){r-=w;if(r<0)return m;}
+  return cand[0][0];
 }
 
 /* ---------------- search ---------------- */
@@ -729,6 +867,17 @@ function think(pos,o){
   const rootTurn=pos.turn;
   let root=pos.legal();
   if(o.allowed){const A=new Set(o.allowed);const r2=root.filter(m=>A.has(pos.uci(m)));if(r2.length)root=r2;}
+  // bots keep their impostor hidden for the first moves of the game
+  // never before move 10, then more and more likely up to move 20, so the timing is not predictable
+  if(v.imp&&pos.sec[pos.turn]>=0&&(pos.full<10||(pos.full<20&&Math.random()>(pos.full-9)/11))){const r2=root.filter(m=>(m&127)!==pos.sec[pos.turn]);if(r2.length)root=r2;}
+  // follow known openings first (o.book: how many plies of book to use, 0 = none)
+  let offBook=false;
+  if(o.book!==0&&root.length){const bm=bookMove(pos,root,o.book||24);if(bm){
+    // now and then the bot leaves the book at a random moment and plays its own move instead
+    const leave=o.bookLeave!==undefined?o.bookLeave:0.05;
+    if(Math.random()>=leave)return {move:bm,score:0,depth:0,book:true};
+    const e=BOOK.get(bookKey(pos)),r2=root.filter(m=>!e[pos.uci(m)]);if(r2.length){root=r2;offBook=true;}
+  }}
   if(v.duck){const ok=new Set(root);root=pos.genFull(3).filter(m=>ok.has(m&BASEMASK));}
   if(!root.length)return {move:0,score:0,depth:0};
   if(root.length===1)return {move:root[0],score:0,depth:0};
@@ -736,14 +885,23 @@ function think(pos,o){
   for(const m of root){pos.make(m);const r=pos.result();pos.unmake();if(r&&r.winner===pos.turn)return {move:m,score:MATE,depth:1};}
 
   if(o.mode==='noisy'){
-    if(Math.random()<(o.blunder||0))return {move:root[(Math.random()*root.length)|0],score:0,depth:0};
+    // early in the game, play sensible moves: no random blunders and much less noise
+    const early=pos.full<=10&&!v.anti;
+    if(!early&&Math.random()<(o.blunder||0)){
+      // random blunders never reveal the impostor in the opening
+      let pool=root;if(v.imp&&pos.full<15){const q=root.filter(m=>(m&127)!==pos.sec[pos.turn]);if(q.length)pool=q;}
+      return {move:pool[(Math.random()*pool.length)|0],score:0,depth:0};
+    }
     const scored=[];
     for(const m of root){
+      // opening manners: no wandering king, no early queen trips
+      let pen=0;const mf=(m>>>17)&15,mt=pos.b[m&127]&7;
+      if(early&&!(mf&(F_CASTLE|F_DROP))&&!v.koth&&!v.kingCap){if(mt===K)pen=90;else if(mt===Q&&pos.full<=6)pen=30;else if(mt===R)pen=45;}
       pos.make(m);
       const fl=pos.turn!==rootTurn;
       let s=o.depth<=1?(fl?-qs(-INF,INF,1,0):qs(-INF,INF,1,0)):(fl?-nega(o.depth-1,-INF,INF,1,true):nega(o.depth-1,-INF,INF,1,true));
       pos.unmake();
-      scored.push({m,s:s+(Math.random()*2-1)*(o.noise||0)});
+      scored.push({m,s:s-pen+(Math.random()*2-1)*(o.noise||0)*(offBook?0.1:early?0.3:1)});
     }
     scored.sort((a,b)=>b.s-a.s);
     return {move:scored[0].m,score:scored[0].s|0,depth:o.depth};

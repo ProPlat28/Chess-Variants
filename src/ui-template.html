@@ -81,6 +81,7 @@ main{flex:1;display:flex;justify-content:center;align-items:flex-start;gap:20px;
 .piece.pop{animation:pop .22s ease-out}
 @keyframes pop{from{transform:scale(.4);opacity:.2}to{transform:scale(1);opacity:1}}
 .secmark{position:absolute;width:12.5%;height:12.5%;z-index:3;pointer-events:none}
+.impmark span{position:absolute;right:3%;top:3%;width:38%;height:38%;border-radius:50%;background:rgba(242,182,50,.9);box-shadow:0 0 0 2px rgba(0,0,0,.35);display:grid;place-items:center;font-size:calc(var(--bs)*.028);line-height:1}
 .secmark img{position:absolute;right:3%;top:3%;width:38%;height:38%;border-radius:50%;background:rgba(242,182,50,.9);box-shadow:0 0 0 2px rgba(0,0,0,.35)}
 .boom{position:absolute;width:12.5%;height:12.5%;z-index:6;pointer-events:none;border-radius:50%;background:radial-gradient(circle,#fff6c2 0%,#ffb300 35%,rgba(255,70,0,.75) 60%,rgba(255,70,0,0) 72%);animation:boom .55s ease-out forwards}
 @keyframes boom{from{transform:scale(.3);opacity:1}to{transform:scale(1.9);opacity:0}}
@@ -142,6 +143,12 @@ body.lobby{display:block;height:auto;min-height:100%}
 .ogj{font-weight:700;color:var(--accent2);font-size:14px}
 .on-empty,.on-off,.on-note{font-size:13px;color:var(--muted);line-height:1.45}
 .on-note{margin-top:8px}
+.acct-tabs{display:flex;gap:6px;margin-bottom:10px}
+.acct-tabs button{flex:1;padding:8px;border-radius:8px;background:var(--panel2);font-weight:700;font-size:14px;color:var(--muted)}
+.acct-tabs button.on{background:var(--raise2);color:var(--text)}
+.acct-err{color:var(--danger);font-size:13px;font-weight:600;min-height:18px;margin-bottom:6px}
+.acct-me{display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:10px}
+.acct-me b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .rmcode{display:flex;align-items:center;justify-content:center;gap:10px;color:var(--muted);font-size:14px;padding:0 20px 10px}
 .rmcode b{font-size:30px;letter-spacing:6px;color:var(--text);font-variant-numeric:tabular-nums;user-select:text;-webkit-user-select:text}
 .rmcode .btn{padding:6px 10px;font-size:13px}
@@ -157,6 +164,11 @@ body.lobby{display:block;height:auto;min-height:100%}
 .btn.kick:hover{background:#73302a}
 #rmVariant{width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--raise2);border-radius:8px;padding:10px;font:inherit;font-size:15px}
 #rmVariant:disabled{opacity:.85}
+#mmVariant{flex:1;min-width:0;background:var(--panel2);color:var(--text);border:1px solid var(--raise2);border-radius:8px;padding:9px 10px;font:inherit;font-size:15px}
+.mm-spin{width:54px;height:54px;margin:6px auto 0;border-radius:50%;border:5px solid var(--raise2);border-top-color:var(--accent);animation:mmspin 1s linear infinite}
+@keyframes mmspin{to{transform:rotate(360deg)}}
+.mm-txt{text-align:center;color:var(--muted);font-size:14px;line-height:1.45}
+.mm-txt b{color:var(--text)}
 .rmvi{font-size:13px;color:var(--muted);margin-top:6px;line-height:1.4}
 .rmnote{font-size:13px;color:var(--muted);text-align:center;line-height:1.4}
 .seg button:disabled{cursor:default}
@@ -415,6 +427,16 @@ body.four .player{height:auto;min-height:36px}
   </div>
 </div>
 
+<div class="overlay" id="mmModal">
+  <div class="modal">
+    <h2>Searching…</h2>
+    <div class="mbody">
+      <div class="mm-spin"></div>
+      <div class="mm-txt" id="mmTxt"></div>
+      <div class="row2"><button class="btn" id="mmCancel" style="flex:1">Cancel</button></div>
+    </div>
+  </div>
+</div>
 <div class="overlay" id="roomModal">
   <div class="modal">
     <h2>Game room</h2>
@@ -495,6 +517,8 @@ Object.assign(VINFO,{
     rules:['Captured pieces join your reserve and can be dropped on any empty square, as in Crazyhouse.','The back rank starts in one of 960 shuffled setups, as in Chess960.','To castle, move the king onto its own rook, or to its castling square.','Checkmate to win.']},
   secret:{name:'Secret Queen',icon:'🤫',src:['Custom idea'],short:'One of your pawns is secretly a queen. It moves like one.',
     rules:['Before the game, each player secretly chooses one of their pawns to be a hidden queen.','The hidden queen looks like a pawn, but it can move and capture like a queen. It cannot attack the king while hidden.','After its first move it still looks like a pawn while your opponent replies. At the start of your next turn it becomes a real queen.','Your opponent may not answer with a move that leaves their king attacked by that queen.','If it is captured before it changes, it was just a pawn.','Against a bot, your hidden queen is marked with a small queen that only you see. The bot does not know which pawn you chose.']},
+  impostor:{name:'Impostor',icon:'🕵️',src:['Custom idea'],short:'One enemy piece secretly works for you. Move it and it joins your army.',
+    rules:['Before the game, each player secretly chooses one of the opponent\'s pieces (not the king) to be their impostor.','The impostor stays in the enemy army: your opponent can move it, and it can be captured, like any of their pieces.','On any turn, instead of a normal move, you may move your impostor as if it were your own piece. It then switches sides and becomes yours for the rest of the game.','The switching move can capture enemy pieces, but it cannot give check, promote or move a pawn two squares. After that it plays normally.','If the impostor is captured before it switches, it is gone.','Against a bot, your impostor is marked with a small mask that only you see. The bot does not know which piece you chose.']},
   setup:{name:'Setup Chess',icon:'🧩',src:['Chess.com'],short:'Start from an empty board and place your own army.',
     rules:['The board starts empty. Players take turns placing one piece at a time on their own first two ranks, White first.','Tap a piece in your reserve, then a square (or drag it there).','A placement may not give check.','Once all 32 pieces are placed, normal chess begins with White to move. There is no castling, and pawns on the first rank move one square at a time.','Checkmate to win.']},
   checkless:{name:'Checkless',icon:'🚫',src:['Chess.com'],short:'You may not give check, unless it is checkmate.',
@@ -503,6 +527,8 @@ Object.assign(VINFO,{
 Object.assign(VINFO,{
   chatgpt:{name:'vs ChatGPT',icon:'🤖',src:['Parody'],short:'Plays normal chess… until it starts teleporting pieces and making up rules.',
     rules:['A parody of the famous videos where ChatGPT plays chess. Not affiliated with OpenAI.','It starts with normal, confident moves and explains each one in the status line.','As the game goes on it starts cheating: teleporting pieces, capturing like a king, bringing queens back, stealing your pieces, playing two moves at once and walking backwards with pawns. Illegal moves are shown in red with ??.','When you checkmate it, it may refuse and walk its king away. Keep going: it gives up eventually.','If its cheating leaves its king hanging, you can capture the king to win.','Your own moves always follow the normal rules. No takebacks.']},
+  mirror:{name:'vs Mirror Bot',icon:'🪞',src:['Custom bot'],short:'Copies every move you make. Check it, and it checks you right back.',
+    rules:['You play White. The Mirror Bot answers each move with the same move on its side of the board: if you play e4, it plays e5.','It even copies checks: if you give check, it gives check back while still in check itself. You must get your king out of check first, and then it copies your escape.','Kings are never captured, so a king may stay in check for a moment.','It even copies checkmate: if it can copy your mating move, the game goes on and now you are in check (or mated). To win, find a mate it cannot copy.','It copies captures even when it should be impossible: take one of its pieces, and your piece of the same kind (on the mirrored square, or the closest one) vanishes. That is its move.','When any other mirrored move is impossible (the board is no longer symmetric), the bot plays its own move.']},
   progressive:{name:'1, 2, 3 Moves',icon:'🔢',src:['Custom idea'],short:'White plays 1 move, Black 2, White 3… A check resets the count.',
     rules:['Turns get longer: White plays 1 move, then Black plays 2 moves in a row, then White 3, Black 4, and so on.','Giving check ends your turn straight away, even if you had moves left.','After a check the count starts again: the player in check gets 1 move, the other player 2, then 3, and so on.','You may never leave your own king in check, even in the middle of your turn.','Checkmate to win. The move counter is shown next to whose turn it is.']},
   kingcapture:{name:'King Capture',icon:'👑',src:['Custom idea'],short:'No check. The king can walk into danger, and whoever captures a king wins.',
@@ -514,8 +540,8 @@ Object.assign(VINFO,{
   makruk:{name:'Makruk',icon:'🛕',src:['Thailand, still played'],short:'Thai chess. Pawns start on the third rank and promote early.',
     rules:['The piece in the queen\'s place is the Met: it moves one square diagonally. The kings start on d1 and e8.','The piece in the bishop\'s place is the Khon: it moves one square diagonally or one square straight forward.','Pawns start on the third rank, move one square only and promote to a Met on the sixth rank.','There is no castling.','Win by checkmate. Stalemate is a draw.']}
 });
-const VGROUPS=[['Classic and modern variants',['standard','chess960','crazyhouse','kingofthehill','threecheck','antichess','atomic','horde','racingkings','bughouse','fourpc','fourteams','fog','duck','torpedo','crazy960','checkless','setup']],['Ancient chess',['chaturanga','shatranj','makruk']],['Custom ideas',['chatgpt','secret','kingcapture','progressive']]];
-const VORDER=['standard','chess960','crazyhouse','kingofthehill','threecheck','antichess','atomic','horde','racingkings','bughouse','fourpc','fourteams','fog','duck','torpedo','crazy960','checkless','setup','secret'];
+const VGROUPS=[['Classic and modern variants',['standard','chess960','crazyhouse','kingofthehill','threecheck','antichess','atomic','horde','racingkings','bughouse','fourpc','fourteams','fog','duck','torpedo','crazy960','checkless','setup']],['Ancient chess',['chaturanga','shatranj','makruk']],['Custom ideas',['secret','impostor','kingcapture','progressive']],['Special bots',['chatgpt','mirror']]];
+const VORDER=['standard','chess960','crazyhouse','kingofthehill','threecheck','antichess','atomic','horde','racingkings','bughouse','fourpc','fourteams','fog','duck','torpedo','crazy960','checkless','setup','secret','impostor'];
 
 /* ---------- settings ---------- */
 const DEF={variant:'standard',mode:'bot',level:'medium',color:'w',dots:true,sound:true,coords:true,autoflip:false,theme:'green'};
@@ -524,7 +550,7 @@ try{Object.assign(cfg,JSON.parse(localStorage.getItem('chess.cfg')||'{}'));}catc
 if(!VINFO[cfg.variant])cfg.variant='standard';
 function saveCfg(){try{localStorage.setItem('chess.cfg',JSON.stringify(cfg));}catch(e){}}
 /* ---------- online play: private rooms, joined with a code. Host picks the variant, can kick, and starts ---------- */
-const NO_ONLINE=['chatgpt'];
+const NO_ONLINE=['chatgpt','mirror'];
 const SEAT_LABELS={fourpc:['Red','Blue','Yellow','Green'],fourteams:['Red · team 1','Blue · team 2','Yellow · team 1','Green · team 2'],bughouse:['Board A · White','Board A · Black','Board B · White','Board B · Black']};
 const NET={room:null,ready:false,game:null,role:'',code:'',online:false,started:false,oppNick:'',oppHere:false,mySec:-1,oppSec:-1,pickWait:false,unsub:null,
   seats:[],kicked:[],myPeer:'',settings:{v:'standard',c:'w',lv:'medium'},gid:'',hostSeen:false,hostTimer:0,
@@ -579,6 +605,76 @@ function mqttRoom(lib){
     });}
   };
 }
+/* ---------- online accounts: name + password, names are unique (not case-sensitive) ----------
+   Each account is a retained message on the MQTT broker: {n:name, s:salt, h:PBKDF2-SHA256 hash}.
+   The password itself never leaves the device. */
+const ACCT={user:null,busy:false,tab:'login',err:''};
+try{const a=JSON.parse(localStorage.getItem('chess.acct')||'null');if(a&&typeof a.n==='string')ACCT.user=a.n;}catch(e){}
+function acctKey(n){return String(n).trim().toLowerCase();}
+function acctNameOk(n){return /^[A-Za-z0-9_-]{3,16}$/.test(n);}
+const b64=u=>btoa(String.fromCharCode(...new Uint8Array(u))),unb64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+async function pwHash(pw,salt){
+  const k=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveBits']);
+  return b64(await crypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:150000,hash:'SHA-256'},k,256));
+}
+let acctConn=null;
+async function acctClient(){
+  if(acctConn&&acctConn.connected)return acctConn;
+  const lib=await loadMqtt();
+  return acctConn=await new Promise((res,rej)=>{
+    const c=lib.connect(MQ_URL,{username:'public',password:'public',clientId:'cva_'+Math.random().toString(36).slice(2,12),clean:true,reconnectPeriod:0,connectTimeout:8000});
+    const t=setTimeout(()=>{try{c.end(true);}catch(e){}rej(new Error('offline'));},9000);
+    c.on('connect',()=>{clearTimeout(t);res(c);});c.on('error',()=>{});
+  });
+}
+// read the stored account for a name: the record, or null if the name is free
+async function acctRead(key){
+  const c=await acctClient(),topic=MQ_BASE+'_acct/'+key;
+  return new Promise((res,rej)=>{
+    let got=null,fin=false;
+    const onMsg=(t,buf)=>{if(t!==topic)return;try{const s=buf.toString();got=s?JSON.parse(s):null;}catch(e){got=null;}end();};
+    const end=()=>{if(fin)return;fin=true;c.removeListener('message',onMsg);c.unsubscribe(topic);res(got&&got.h&&got.s?got:null);};
+    c.on('message',onMsg);
+    c.subscribe(topic,{qos:1},err=>{if(err){fin=true;c.removeListener('message',onMsg);rej(err);return;}setTimeout(end,2500);});
+  });
+}
+async function acctRegister(name,pw){
+  const key=acctKey(name);
+  if(await acctRead(key))throw new Error('That name is already taken. Pick another one.');
+  const salt=crypto.getRandomValues(new Uint8Array(16)),rec={n:name,s:b64(salt),h:await pwHash(pw,salt),t:Date.now()};
+  const c=await acctClient();
+  await new Promise((res,rej)=>c.publish(MQ_BASE+'_acct/'+key,JSON.stringify(rec),{retain:true,qos:1},e=>e?rej(e):res()));
+  // someone may have registered the same name at the same moment: the stored record decides
+  const back=await acctRead(key);
+  if(!back||back.s!==rec.s)throw new Error('That name is already taken. Pick another one.');
+  return back.n;
+}
+async function acctLogin(name,pw){
+  const rec=await acctRead(acctKey(name));
+  if(!rec)throw new Error('No account with that name. Create one first.');
+  if(await pwHash(pw,unb64(rec.s))!==rec.h)throw new Error('Wrong password.');
+  return rec.n;
+}
+function acctSet(n){
+  ACCT.user=n;cfg.nick=n||'';saveCfg();
+  try{if(n)localStorage.setItem('chess.acct',JSON.stringify({n}));else localStorage.removeItem('chess.acct');}catch(e){}
+}
+if(ACCT.user)cfg.nick=ACCT.user;
+async function acctSubmit(){
+  if(ACCT.busy)return;
+  const name=$('acctName').value.trim(),pw=$('acctPass').value,pw2=$('acctPass2')?$('acctPass2').value:pw;
+  const err=m=>{ACCT.err=m;const e=$('acctErr');if(e)e.textContent=m;};
+  if(!acctNameOk(name))return err('Names use 3–16 letters, numbers, _ or -.');
+  if(pw.length<6)return err('The password needs at least 6 characters.');
+  if(ACCT.tab==='register'&&pw!==pw2)return err('The two passwords are different.');
+  if(!window.crypto||!crypto.subtle)return err('This browser cannot create accounts here. Open the page over https.');
+  ACCT.busy=true;err('');const btn=$('acctGo');if(btn){btn.disabled=true;btn.textContent='Please wait…';}
+  try{
+    const n=ACCT.tab==='register'?await acctRegister(name,pw):await acctLogin(name,pw);
+    acctSet(n);ACCT.err='';toast((ACCT.tab==='register'?'Account created. ':'')+'Welcome, '+n+'!');
+  }catch(e){ACCT.err=e&&e.message&&!/offline|timeout|mqtt/i.test(e.message)?e.message:'Could not reach the server. Check your connection and try again.';}
+  ACCT.busy=false;renderOnline(true);
+}
 (async()=>{
   try{
     let r=null;try{r=window.claude&&window.claude.use?await window.claude.use('room'):null;}catch(e){r=null;}
@@ -587,14 +683,34 @@ function mqttRoom(lib){
     NET.room=r;NET.ready=true;renderOnline();
   }catch(e){NET.ready=false;renderOnline();}
 })();
-function renderOnline(){
+function renderOnline(force){
   const box=$('onlineBox');if(!box)return;
   const sec=box.closest('section.online');if(!NET.ready){if(sec)sec.hidden=true;box.innerHTML='';return;}if(sec)sec.hidden=false;
-  if(document.activeElement&&(document.activeElement.id==='nickIn'||document.activeElement.id==='codeIn'))return;
-  box.innerHTML='<div class="on-row"><label class="on-lab" for="nickIn">Your name</label><input id="nickIn" maxlength="20" placeholder="Player" value="'+esc(cfg.nick||'')+'"></div>'+
+  const ae=document.activeElement;if(!force&&ae&&['codeIn','acctName','acctPass','acctPass2'].includes(ae.id))return;
+  if(!ACCT.user){
+    const reg=ACCT.tab==='register';
+    box.innerHTML='<div class="on-note" style="margin:0 0 10px">Log in to play online. New here? Create an account: each name can only be taken once.</div>'+
+      '<div class="acct-tabs"><button id="tabLogin" class="'+(reg?'':'on')+'">Log in</button><button id="tabReg" class="'+(reg?'on':'')+'">Create account</button></div>'+
+      '<div class="on-row"><label class="on-lab" for="acctName">Name</label><input id="acctName" maxlength="16" autocomplete="username" autocapitalize="off" placeholder="3–16 letters or numbers"></div>'+
+      '<div class="on-row"><label class="on-lab" for="acctPass">Password</label><input id="acctPass" type="password" autocomplete="'+(reg?'new-password':'current-password')+'" placeholder="At least 6 characters"></div>'+
+      (reg?'<div class="on-row"><label class="on-lab" for="acctPass2">Again</label><input id="acctPass2" type="password" autocomplete="new-password" placeholder="Repeat the password"></div>':'')+
+      '<div class="acct-err" id="acctErr">'+esc(ACCT.err)+'</div>'+
+      '<div class="on-row"><button class="btn primary" id="acctGo" style="flex:1">'+(reg?'Create account':'Log in')+'</button></div>';
+    const keep=$('acctName');keep.value=ACCT.lastName||'';keep.oninput=e=>{ACCT.lastName=e.target.value;};
+    $('tabLogin').onclick=()=>{ACCT.tab='login';ACCT.err='';renderOnline(true);};
+    $('tabReg').onclick=()=>{ACCT.tab='register';ACCT.err='';renderOnline(true);};
+    $('acctGo').onclick=acctSubmit;
+    box.querySelectorAll('input').forEach(i=>i.onkeydown=e=>{if(e.key==='Enter')acctSubmit();});
+    return;
+  }
+  const mmv=MM.vs.includes(cfg.variant)?cfg.variant:'standard';
+  box.innerHTML='<div class="acct-me">👤 <b>'+esc(ACCT.user)+'</b><button class="btn" id="acctOut">Log out</button></div>'+
+    '<div class="on-row"><select id="mmVariant" aria-label="Variant to search">'+MM.vs.map(v=>'<option value="'+v+'"'+(v===mmv?' selected':'')+'>'+esc(VINFO[v].name)+'</option>').join('')+'</select><button class="btn primary" id="mmGo">🔍 Search online</button></div>'+
+    '<div class="on-note" style="margin:0 0 12px">Play a random player from anywhere. Or play friends with a private room code:</div>'+
     '<div class="on-row"><input id="codeIn" maxlength="8" placeholder="Room code" autocapitalize="off" autocomplete="off"><button class="btn" id="codeJoin">Join</button><button class="btn primary" id="hostBtn">Host a game</button></div>'+
     '<div class="on-note">Rooms are private. Host a game and send the code to your friends; they type it here and press Join. Every variant works online, and empty seats in 4-player games are filled with bots. Your friends also need access to this page: use Share at the top of the artifact.</div>';
-  $('nickIn').oninput=e=>{cfg.nick=cleanNick(e.target.value);saveCfg();};
+  $('acctOut').onclick=()=>{mmCancel();acctSet(null);ACCT.tab='login';renderOnline(true);};
+  $('mmGo').onclick=()=>mmStart($('mmVariant').value);
   $('codeJoin').onclick=()=>{const c=$('codeIn').value.trim().toLowerCase();if(/^[a-z0-9]{4,8}$/.test(c))joinGame(c);else toast('Enter the room code your friend shared, like k7m2.');};
   $('hostBtn').onclick=()=>hostRoom(okVariant(cfg.variant)?cfg.variant:'standard');
 }
@@ -611,26 +727,90 @@ async function leaveOnline(){
   $('roomModal').classList.remove('on');
   if(G4.online){G4.online=false;}
 }
-async function hostRoom(v){
+/* ---------- search online: random opponent matchmaking ----------
+   Searchers wait in a lobby room per variant. The two oldest searchers pair up:
+   the one with the smaller id opens a private room and points the other one to it. */
+const MM={on:false,g:null,v:'',unsub:null,t0:0,tick:0,wait:0,busy:false,
+  vs:Object.keys(VINFO).filter(v=>okVariant(v)&&!SEAT_LABELS[v])};
+function mmModal(show,txt){const m=$('mmModal');if(show){document.querySelectorAll('.overlay.on').forEach(o=>o.id!=='mmModal'&&o.classList.remove('on'));m.classList.add('on');}else m.classList.remove('on');if(txt!==undefined)$('mmTxt').innerHTML=txt;}
+function mmText(){const s=Math.floor((Date.now()-MM.t0)/1000);$('mmTxt').innerHTML='Looking for a <b>'+esc(VINFO[MM.v].name)+'</b> opponent<br>'+Math.floor(s/60)+':'+String(s%60).padStart(2,'0');}
+async function mmLeaveLobby(){if(MM.unsub){try{MM.unsub();}catch(e){}MM.unsub=null;}const g=MM.g;MM.g=null;if(g)try{await g.leave();}catch(e){}}
+async function mmStart(v){
+  if(!ACCT.user){toast('Log in to play online.');return;}
+  if(!NET.ready){toast('Online play is not available in this view.');return;}
+  if(!MM.vs.includes(v))v='standard';
+  await mmCancel(true);await leaveOnline();
+  MM.on=true;MM.v=v;MM.t0=Date.now();MM.busy=false;
+  mmModal(true);mmText();clearInterval(MM.tick);MM.tick=setInterval(()=>{if(MM.on&&!MM.busy)mmText();},1000);
+  await mmLobby();
+}
+async function mmLobby(){
+  if(!MM.on)return;
+  MM.busy=false;mmText();
+  try{MM.g=await NET.room.join('mm-'+MM.v);}catch(e){if(MM.on){mmCancel();toast('Could not reach the server. Try again.');}return;}
+  if(!MM.on){mmLeaveLobby();return;}
+  MM.g.presence({w:1,n:myNick(),t:Date.now(),to:'',code:''}).catch(()=>{});
+  MM.unsub=MM.g.onPeers(mmPeers,()=>{});
+}
+function mmPeers(){
+  if(!MM.on||!MM.g||MM.busy)return;
+  const ps=MM.g.peers(),me=ps.find(p=>p.sameTab);if(!me)return;
+  // someone picked me: join their room
+  const inv=ps.find(p=>!p.sameTab&&p.presence&&p.presence.to===me.peer&&/^[a-z0-9]{4,8}$/.test(p.presence.code||''));
+  if(inv){mmJoin(inv.presence.code,cleanNick(inv.presence.n)||'Player');return;}
+  const free=ps.filter(p=>p.presence&&p.presence.w===1&&!p.presence.to&&(p.sameTab||cleanNick(p.presence.n)!==myNick())).sort((a,b)=>a.peer<b.peer?-1:1);
+  const i=free.findIndex(p=>p.sameTab);
+  if(i>=0&&i%2===0&&free[i+1])mmHost(free[i+1].peer,cleanNick(free[i+1].presence.n)||'Player');
+}
+async function mmHost(peer,nick){
+  MM.busy=true;const code=newCode();
+  mmModal(true,'Found <b>'+esc(nick)+'</b>! Starting the game…');
+  MM.g.presence({to:peer,code}).catch(()=>{});
+  const v=MM.v,saved=cfg.color;cfg.color='r';NET.auto=true;
+  await hostRoom(v,true,code);cfg.color=saved;
+  if(NET.role!=='host'){NET.auto=false;mmRetry();return;}
+  onRoomPeers();
+  // keep the invite up until they arrive, then leave the lobby
+  MM.wait=setTimeout(()=>{if(MM.on&&!NET.started){leaveOnline().then(()=>{if(MM.g)MM.g.presence({to:'',code:''}).catch(()=>{});MM.busy=false;mmText();});}},12000);
+}
+async function mmJoin(code,nick){
+  MM.busy=true;
+  mmModal(true,'Found <b>'+esc(nick)+'</b>! Starting the game…');
+  if(MM.g)MM.g.presence({w:0}).catch(()=>{});
+  await joinGame(code);
+  MM.wait=setTimeout(()=>{if(MM.on&&!NET.started)mmRetry();},12000);
+}
+async function mmRetry(){await leaveOnline();await mmLeaveLobby();if(MM.on)mmLobby();}
+// called when an online game starts: matchmaking is done
+function mmDone(){if(!MM.on)return;MM.on=false;clearInterval(MM.tick);clearTimeout(MM.wait);mmModal(false);mmLeaveLobby();}
+async function mmCancel(quiet){
+  const was=MM.on;MM.on=false;clearInterval(MM.tick);clearTimeout(MM.wait);mmModal(false);NET.auto=false;
+  await mmLeaveLobby();
+  if(was&&!NET.started&&NET.game)await leaveOnline();
+}
+$('mmCancel').onclick=()=>mmCancel();
+async function hostRoom(v,fromSearch,code){
+  if(!ACCT.user){toast('Log in to play online.');return;}
   if(!NET.ready){toast('Online play is not available in this view.');return;}
   await leaveOnline();
-  NET.code=newCode();NET.role='host';NET.settings={v:okVariant(v)?v:'standard',c:cfg.color==='b'?'b':cfg.color==='r'?'r':'w',lv:BOTS[cfg.level]?cfg.level:'medium'};
+  NET.code=code||newCode();NET.role='host';NET.settings={v:okVariant(v)?v:'standard',c:cfg.color==='b'?'b':cfg.color==='r'?'r':'w',lv:BOTS[cfg.level]?cfg.level:'medium'};
   try{NET.game=await NET.room.join('g-'+NET.code);}catch(e){NET.role='';toast('Could not open a room. Try again in a moment.');return;}
   const me=NET.game.peers().find(p=>p.sameTab);NET.myPeer=me?me.peer:'';
   NET.seats=[NET.myPeer].concat(Array(nSeats(NET.settings.v)-1).fill(null));
   gp({role:'host',n:myNick(),v:NET.settings.v,c:NET.settings.c,lv:NET.settings.lv,seats:NET.seats,kick:[],start:null,g:'',m:'',L:'',r:0,s:-1});
   NET.unsub=NET.game.onPeers(onRoomPeers,()=>toast('The connection to the room was lost.'));
-  showRoom();
+  if(!fromSearch)showRoom();
 }
 async function joinGame(code){
+  if(!ACCT.user){toast('Log in to play online.');return;}
   if(!NET.ready){toast('Online play is not available in this view.');return;}
   await leaveOnline();
   NET.code=code;NET.role='guest';
   try{NET.game=await NET.room.join('g-'+code);}catch(e){NET.role='';toast('Could not join that room.');return;}
   gp({role:'guest',n:myNick(),g:'',m:'',r:0,s:-1,q:null});
   NET.unsub=NET.game.onPeers(onRoomPeers,()=>toast('The connection to the room was lost.'));
-  showRoom();
-  NET.hostTimer=setTimeout(()=>{if(NET.role==='guest'&&!NET.hostSeen){toast('Nobody is hosting room '+code+' right now.');leaveOnline();}},9000);
+  if(!MM.on)showRoom();
+  NET.hostTimer=setTimeout(()=>{if(NET.role==='guest'&&!NET.hostSeen&&!MM.on){toast('Nobody is hosting room '+code+' right now.');leaveOnline();}},9000);
 }
 function roomPeers(){return NET.game?NET.game.peers():[];}
 function hostPeer(){return roomPeers().find(p=>!p.sameTab&&p.presence&&p.presence.role==='host')||null;}
@@ -652,6 +832,7 @@ function onRoomPeers(){
     }
     if(NET.myPeer&&!NET.seats[0]){NET.seats[0]=NET.myPeer;changed=true;}
     if(changed)gp({seats:NET.seats.slice()});
+    if(NET.auto&&!NET.started&&NET.seats[1]){NET.auto=false;clearTimeout(MM.wait);setTimeout(()=>{if(NET.role==='host'&&!NET.started&&NET.seats[1])$('rmStart').onclick();},400);}
     if(NET.started&&NET.mode4)hostReadRequests();
   }else{
     const h=hostPeer();
@@ -684,7 +865,7 @@ function onRoomPeers(){
   if(!opp){updateStatus();renderPanels();return;}
   const pr=opp.presence;
   if(pr.g!==NET.gid){updateStatus();renderPanels();return;}
-  if(V.secret&&NET.oppSec<0&&Number.isInteger(pr.s)&&pr.s>=0&&pr.s<128){NET.oppSec=pr.s;trySecretStart();}
+  if((V.secret||V.imp)&&NET.oppSec<0&&Number.isInteger(pr.s)&&pr.s>=0&&pr.s<128){NET.oppSec=pr.s;trySecretStart();}
   if(pr.r===1&&!over){setOver({winner:userColor,reason:'Opponent resigned'});render();renderMoves();showEnd();return;}
   if(typeof pr.m==='string'&&!over){
     const theirs=pr.m?pr.m.split(' '):[],mine=hist.map(h=>h.uci);
@@ -766,6 +947,7 @@ $('rmStart').onclick=()=>{
 };
 
 function startFromPayload(st){
+  mmDone();
   NET.started=true;NET.online=true;NET.mySec=-1;NET.oppSec=-1;NET.pickWait=false;NET.gid=st.g;NET.startSeats=st.seats.slice();
   NET.log=[];NET.applied=0;NET.waiting=false;NET.qn=0;NET.lastQ={};NET.botPend={};
   NET.mySeat=st.seats.indexOf(NET.myPeer);
@@ -795,7 +977,7 @@ function startFromPayload(st){
   NET.oppNick=nameOfPeer(opp)||'Opponent';
   variant=st.v;gameMode='bot';userColor=col;flipped=col===1;startFenStr=st.f;
   newGameState();layout();render();renderMoves();
-  if(V.secret){picking=userColor;render();updateStatus();}
+  if(V.secret||V.imp){picking=userColor;render();updateStatus();}
   toast('Game on! You play '+(col?'Black':'White')+' against '+NET.oppNick+'.');
   sound('end');
   onRoomPeers();
@@ -819,7 +1001,7 @@ function trySecretStart(){
   if(NET.mySec<0||NET.oppSec<0)return;
   const s=[-1,-1];s[userColor]=NET.mySec;s[userColor^1]=NET.oppSec;
   pos.setSecret(s);snaps[0]=snapshot(null);legalCache=null;NET.pickWait=false;picking=-1;
-  toast('Both secret queens are chosen.');render();renderMoves();
+  toast(V.imp?'Both impostors are chosen.':'Both secret queens are chosen.');render();renderMoves();
 }
 
 /* ---- 3- and 4-player games: the host keeps one shared move list ---- */
@@ -932,6 +1114,7 @@ function botInfo(level,variant){
   if(variant==='chatgpt')return {name:'ChatGPT',label:'ChatGPT',rating:'parody',emoji:'🤖',bg:'#5b5bd6',desc:'Makes things up'};
   const b=Object.assign({},BOTS[level]);
   if(level==='impossible'&&!VINFO[variant].sf){b.name='Max Bot';b.rating='max';b.desc='Strongest built-in engine';}
+  if(variant==='mirror')return {name:'Mirror Bot',label:'Mirror',rating:'mirror',emoji:'🪞',bg:'#4a7fa8',desc:'Copies your moves'};
   return b;
 }
 const THEMES={green:['#ebecd0','#739552'],brown:['#f0d9b5','#b58863'],blue:['#dee3e6','#8ca2ad'],purple:['#e8e0f0','#8e72b0']};
@@ -945,7 +1128,9 @@ let selected=-1,selDrop=0,legalCache=null,hintSq=null;
 let duckPending=null;  // {m, snap}
 let over=null,botBusy=false,gen=0;
 let gameMode='bot',gameLevel='medium';
-let picking=-1;   // secret queen: colour currently choosing its pawn
+let picking=-1;   // secret queen / impostor: colour currently choosing its piece
+// can colour c pick this square? secret queen: one of its own pawns; impostor: an enemy piece that is not the king
+function pickOk(sq,c){const p=pos.b[sq];if(V.imp)return !!p&&p!==C.DUCK&&(p>>3)===(c^1)&&(p&7)!==C.K;return p===(C.P|(c?C.BL:0));}
 
 function legal(){if(!legalCache)legalCache=pos.legal();return legalCache;}
 function isLive(){return viewPly===hist.length;}
@@ -993,7 +1178,7 @@ function render(anim){
   const fv=fogViewer(),vis=fv>=0&&s.vis?s.vis[fv]:null;
   const targets=new Map();
   if(live&&cfg.dots){
-    if(picking>=0&&(gameMode==='bot'||true)){for(let sq=0;sq<120;sq++){if(sq&0x88){sq+=7;continue;}if(pos.b[sq]===(C.P|(picking?C.BL:0)))targets.set(sq,'cap');}}
+    if(picking>=0&&(gameMode==='bot'||true)){for(let sq=0;sq<120;sq++){if(sq&0x88){sq+=7;continue;}if(pickOk(sq,picking))targets.set(sq,'cap');}}
     else if(duckPending){for(let sq=0;sq<120;sq++){if(sq&0x88){sq+=7;continue;}if(!pos.b[sq]&&sq!==pos.duck)targets.set(sq,'duck');}}
     else if(selDrop){for(const m of legal())if((m>>>17)&C.F_DROP&&(m&127)===selDrop)targets.set((m>>7)&127,'');}
     else if(selected>=0){for(const m of legal())if(!((m>>>17)&C.F_DROP)&&(m&127)===selected){
@@ -1045,6 +1230,12 @@ function render(anim){
       e.style.transform='';
     }
     if(s.boom&&!vis)for(const sq of s.boom){const [r,f]=viewRC(sq);const e=document.createElement('div');e.className='boom';e.style.left=(f*12.5)+'%';e.style.top=(r*12.5)+'%';pcEl.appendChild(e);}
+  }
+  if(V.imp&&s.sec){
+    for(const c of [0,1]){const sq=s.sec[c];if(sq<0)continue;
+      const mine=gameMode==='bot'?c===userColor:false;if(!(mine||over))continue;
+      const [r,f]=viewRC(sq);const e=document.createElement('div');e.className='secmark impmark';e.title='Impostor';
+      e.style.left=(f*12.5)+'%';e.style.top=(r*12.5)+'%';e.innerHTML='<span>🎭</span>';pcEl.appendChild(e);}
   }
   if(V.secret&&s.sec){
     for(const c of [0,1])for(const sq of [s.sec[c],s.pend?s.pend[c]:-1]){
@@ -1209,10 +1400,10 @@ function updateStatus(){
   let t;const bi=botInfo(gameLevel,variant);
   if(over)t=over.title+' · '+over.reason;
   else if(!isLive())t='Reviewing move '+viewPly+' of '+hist.length;
-  else if(picking>=0)t=(gameMode==='2p'?(picking?'Black':'White')+': tap':'Tap')+' one of your pawns to make it your secret queen';
+  else if(picking>=0)t=V.imp?(gameMode==='2p'?(picking?'Black':'White')+': tap':'Tap')+' one of your opponent\'s pieces (not the king) to make it your impostor':(gameMode==='2p'?(picking?'Black':'White')+': tap':'Tap')+' one of your pawns to make it your secret queen';
   else if(duckPending)t='Place the duck on an empty square';
   else if(V.setup&&pos.inSetup()&&(gameMode==='2p'||pos.turn===userColor)&&!botBusy)t=(gameMode==='2p'?(pos.turn?'Black':'White')+': place':'Place')+' a piece on your first two ranks';
-  else if(NET.online&&NET.pickWait)t='Waiting for '+NET.oppNick+' to pick a secret queen';
+  else if(NET.online&&NET.pickWait)t='Waiting for '+NET.oppNick+' to pick '+(V.imp?'an impostor':'a secret queen');
   else if(NET.online&&NET.mode4)t=pos.turn===userColor?(NET.waiting?'Sending your move…':'Your move'):NET.oppNick+' to move';
   else if(NET.online)t=pos.turn===userColor?'Your move':(NET.oppHere?NET.oppNick+' is thinking…':NET.oppNick+' disconnected. Waiting for them to come back…');
   else if(V.gpt&&GPT.msg&&!botBusy)t='ChatGPT: “'+GPT.msg+'”';
@@ -1222,7 +1413,7 @@ function updateStatus(){
   if(!over&&isLive()&&!duckPending&&pos.inCheck(pos.turn))t+=' · Check!';
   $('status').textContent=t;$('mstatus').textContent=t;
   $('goalLine').textContent=VINFO[variant].short;
-  $('hdrVariant').textContent=VINFO[variant].name+(variant==='chatgpt'?'':gameMode==='bot'?' · '+bi.label:' · 2 Players');
+  $('hdrVariant').textContent=VINFO[variant].name+(variant==='chatgpt'||variant==='mirror'?'':gameMode==='bot'?' · '+bi.label:' · 2 Players');
   $('undoBtn').disabled=(!hist.length&&!duckPending)||variant==='bughouse'||variant==='chatgpt'||NET.online;
   $('flipBtn').disabled=false;
   $('resignBtn').disabled=!!over||(!hist.length&&gameMode==='2p');
@@ -1285,13 +1476,13 @@ boardEl.addEventListener('pointerdown',e=>{
   if(!isLive()){goto(hist.length);return;}
   const sq=sqFromEvent(e);if(sq<0)return;
   e.preventDefault();
-  if(picking>=0){if(pos.b[sq]===(C.P|(picking?C.BL:0)))pickSecret(sq);return;}
+  if(picking>=0){if(pickOk(sq,picking))pickSecret(sq);return;}
   if(duckPending){if(!pos.b[sq]&&sq!==pos.duck)placeDuck(sq);return;}
   if(!canInput())return;
   if(selDrop){const m=dropMove(selDrop,sq);if(m){chooseMove(m,true);return;}selDrop=0;}
   if(selected>=0&&isTarget(selected,sq)){tryMove(selected,sq,true);return;}
   const p=pos.b[sq];
-  if(p&&p!==C.DUCK&&(p>>3)===pos.turn){
+  if(p&&p!==C.DUCK&&((p>>3)===pos.turn||(V.imp&&sq===pos.sec[pos.turn]&&!(NET.online&&pos.turn!==userColor)))){
     const was=selected===sq;
     if(!was)select(sq);
     const el=pieceEls[sq];
@@ -1399,6 +1590,54 @@ function placeDuck(sq){
 function cancelDuck(){if(!duckPending)return;pos.unmake();duckPending=null;legalCache=null;}
 
 /* ---------- game flow ---------- */
+// Mirror Bot: the user's last move flipped top-to-bottom, if the bot can play it
+function mirrorReply(){
+  const h=hist[hist.length-1];if(!h||h.mover!==userColor)return 0;
+  const fl=s=>(7-(s>>4))*16+(s&7),m=h.m,f=(m>>>17)&15;
+  // castling keeps its encoding (king square, rook square); other moves keep from/to/promotion
+  const mm=(f&C.F_CASTLE)?(fl(m&127)|fl((m>>7)&127)<<7|C.F_CASTLE<<17):(fl(m&127)|fl((m>>7)&127)<<7|(m&(7<<14))|(f&(C.F_EP|C.F_DOUBLE))<<17);
+  const us=pos.turn,ps=pos.gen(false);
+  const hit=ps.find(x=>(x&((1<<21)-1))===mm);if(!hit)return 0;
+  // same kind of piece as the one the user moved
+  const ut=((m>>14)&7)?C.P:(pos.b[(m>>7)&127]&7);
+  if(!(f&C.F_CASTLE)&&(pos.b[hit&127]&7)!==ut)return 0;
+  pos.make(hit);
+  const k=pos.kings[us],uk=pos.kings[userColor];
+  const ok=k<0||!pos.attacked(k,userColor)||(uk>=0&&pos.attacked(uk,us));
+  pos.unmake();
+  return ok?hit:0;
+}
+// Mirror Bot, when it cannot copy a capture for real: your piece of the same kind vanishes,
+// the one on the mirrored square if possible, otherwise the closest one
+function mirrorZap(){
+  const h=hist[hist.length-1];if(!h||h.mover!==userColor)return 0;
+  const rec=pos.u[pos.u.length-1];if(!rec||!rec.cap||(rec.cap&7)===C.K)return 0;
+  const t=rec.cap&7,ub=userColor?C.BL:0,want=(7-(rec.capSq>>4))*16+(rec.capSq&7);
+  const cands=[];
+  for(let s=0;s<120;s++){if(s&0x88){s+=7;continue;}if(pos.b[s]===(t|ub))cands.push([Math.max(Math.abs((s>>4)-(want>>4)),Math.abs((s&7)-(want&7))),s]);}
+  cands.sort((a,b)=>a[0]-b[0]);
+  const bot=pos.turn,k=pos.kings[bot],was=k>=0&&pos.attacked(k,userColor);
+  // when in check, first look for a vanishing piece that gets its king out of check
+  if(was)for(const [,sq] of cands){const m=7|sq<<7|C.F_DROP<<17;pos.make(m);const free=!pos.attacked(k,userColor);pos.unmake();if(free)return m;}
+  for(const [,sq] of cands){
+    const m=7|sq<<7|C.F_DROP<<17;
+    // removing the piece must not open a line onto the bot's own king
+    pos.make(m);const bad=!was&&k>=0&&pos.attacked(k,userColor);pos.unmake();
+    if(!bad)return m;
+  }
+  return 0;
+}
+// the bot's reply: copy the move, or copy the capture; when in check, prefer whichever gets it out
+function mirrorBotMove(){
+  const r=mirrorReply(),z=mirrorZap(),bot=pos.turn,k=pos.kings[bot];
+  if(k>=0&&pos.attacked(k,userColor)){
+    const esc=m=>{if(!m)return false;pos.make(m);const ok=!pos.attacked(k,userColor);pos.unmake();return ok;};
+    if(esc(r))return r;if(esc(z))return z;
+  }
+  return r||z;
+}
+// can the Mirror Bot get out of this checkmate by copying the user's move?
+function mirrorRescue(){const m=mirrorBotMove(),k=pos.kings[pos.turn];if(!m||k<0)return 0;pos.make(m);const ok=!pos.attacked(k,userColor);pos.unmake();return ok?m:0;}
 function commit(m,animate){
   if(NET.online&&NET.mode4&&variant==='bughouse'&&!NET.applying){submitEntry((NET.myBoard?'b':'a')+':'+pos.uci(m));return;}
   const L=legal(),s=pos.san(m,L),u=pos.uci(m),mover=pos.turn;
@@ -1408,6 +1647,7 @@ function commit(m,animate){
   let boom=null;
   if(V.atomic&&cap){const rec=pos.u[pos.u.length-1];boom=[(m>>7)&127];if(rec.ex)for(let i=0;i<rec.ex.length;i+=2)boom.push(rec.ex[i]);}
   if(variant==='bughouse'){const rec=pos.u[pos.u.length-1];if(rec.cap){BH.B.pockAdd(rec.cap>>3,rec.pc?C.P:(rec.cap&7),1);BH.render();}}
+  if(V.imp){const rec=pos.u[pos.u.length-1];if(rec.imp){const c=pos.turn^1;toast('🎭 '+(gameMode==='bot'?(c===userColor?'Your':botInfo(gameLevel,variant).name+'\'s'):(c?'Black\'s':'White\'s'))+' impostor on '+C.sqName((m>>7)&127)+' switched sides!');}}
   if(V.secret){const rec=pos.u[pos.u.length-1];if(rec.tr>=0){const c=pos.turn;toast((gameMode==='bot'?(c===userColor?'Your':botInfo(gameLevel,variant).name+'\'s'):(c?'Black\'s':'White\'s'))+' secret pawn on '+C.sqName(rec.tr)+' became a queen!');}}
   ANN.arrows=[];ANN.marks=[];
   hist.push({m,san:s,uci:u,mover,ser});
@@ -1427,6 +1667,10 @@ function commit(m,animate){
   maybeBot();
 }
 function checkOver(){const r=pos.result(legal());
+  if(V.mirror&&r&&r.winner===userColor&&r.reason==='Checkmate'){
+    // it escapes by copying your capture, or copies your checkmate so you are the one mated
+    if(mirrorRescue()||mirrorReply()){const h=hist[hist.length-1];if(h)h.san=h.san.replace('#','+');renderMoves();return;}
+  }
   if(V.gpt&&r&&r.winner===userColor){if(r.reason==='Checkmate'&&GPT.escapes<2)return;GPT.msg=r.reason==='King captured'?'Wait, you can\'t take my king... oh. Well played.':'Fine. You win this time. Good game!';}
   if(V.gpt&&r&&r.winner===(userColor^1))GPT.msg='Checkmate! As expected, a flawless game from me.';
   if(r)setOver(r);}
@@ -1477,12 +1721,13 @@ function startGame(rematch){
   BH.stop();
   if(isFour(variant)){gen++;G4.start(variant==='fourteams');layout();return;}
   G4.on=false;G4.gen++;show4(false);
-  if(variant==='bughouse'||variant==='chatgpt')gameMode='bot';
+  if(variant==='bughouse'||variant==='chatgpt'||variant==='mirror')gameMode='bot';
   GPT.escapes=0;GPT.msg=variant==='chatgpt'?'Hello! I\'m ready to play a great game of chess.':'';GPT.cheats=0;
   if(!(rematch&&variant==='chess960'&&false))startFenStr=C.startFen(variant);
   if(gameMode==='bot'){
     if(rematch&&cfg.color==='r')userColor^=1;
     else userColor=cfg.color==='b'?1:cfg.color==='w'?0:(Math.random()<.5?0:1);
+    if(variant==='mirror'){userColor=0;flipped=false;gameLevel='medium';}
     flipped=userColor===1;
     if(gameLevel==='impossible'&&VINFO[variant].sf)SF.init();
   }else{userColor=0;flipped=false;}
@@ -1491,22 +1736,25 @@ function startGame(rematch){
   layout();
   render();renderMoves();
   if(gameMode==='2p'&&V.fog)showPass();
-  if(V.secret){beginPicks();return;}
+  if(V.secret||V.imp){beginPicks();return;}
   maybeBot();
 }
 function randomPawn(c){const ps=[];for(let s=0;s<120;s++){if(s&0x88){s+=7;continue;}if(pos.b[s]===(C.P|(c?C.BL:0)))ps.push(s);}const mid=ps.filter(s=>(s&7)>=2&&(s&7)<=5);const pool=Math.random()<.7&&mid.length?mid:ps;return pool[(Math.random()*pool.length)|0];}
+// bot's impostor: any enemy piece but the king, usually a knight, bishop or rook
+function randomImpostor(c){const all=[];for(let s=0;s<120;s++){if(s&0x88){s+=7;continue;}if(pickOk(s,c))all.push(s);}const minor=all.filter(s=>{const t=pos.b[s]&7;return t===C.N||t===C.B||t===C.R;});const pool=Math.random()<.75&&minor.length?minor:all;return pool[(Math.random()*pool.length)|0];}
 function beginPicks(){
-  if(gameMode==='bot'){const s=pos.sec.slice();s[userColor^1]=randomPawn(userColor^1);pos.setSecret(s);picking=userColor;}
+  if(gameMode==='bot'){const s=pos.sec.slice();s[userColor^1]=V.imp?randomImpostor(userColor^1):randomPawn(userColor^1);pos.setSecret(s);picking=userColor;}
+  else if(V.imp){picking=0;passMsg('White: choose your impostor','Black, look away. White taps one of Black\'s pieces.');}
   else{picking=0;passMsg('White: choose your secret queen','Black, look away. White taps one of their pawns.');}
   render();updateStatus();
 }
 function pickSecret(sq){
   if(NET.online){NET.mySec=sq;NET.game&&NET.game.presence({s:sq}).catch(()=>{});picking=-1;NET.pickWait=true;render();updateStatus();trySecretStart();return;}
   const s=pos.sec.slice();s[picking]=sq;pos.setSecret(s);
-  if(gameMode==='2p'&&picking===0){picking=1;flipped=true;render();passMsg('Black: choose your secret queen','White, look away. Black taps one of their pawns.');updateStatus();return;}
+  if(gameMode==='2p'&&picking===0){picking=1;flipped=true;render();if(V.imp)passMsg('Black: choose your impostor','White, look away. Black taps one of White\'s pieces.');else passMsg('Black: choose your secret queen','White, look away. Black taps one of their pawns.');updateStatus();return;}
   picking=-1;snaps[0]=snapshot(null);legalCache=null;
-  if(gameMode==='2p'){flipped=false;passMsg('White to move','Secret queens are chosen. Remember yours: it is not marked in 2-player mode.');}
-  else toast('Your secret queen is marked with a small queen. The bot cannot see it.');
+  if(gameMode==='2p'){flipped=false;passMsg('White to move',V.imp?'Impostors are chosen. Remember yours: it is not marked in 2-player mode.':'Secret queens are chosen. Remember yours: it is not marked in 2-player mode.');}
+  else toast(V.imp?'Your impostor is marked with a small mask. The bot cannot see it.':'Your secret queen is marked with a small queen. The bot cannot see it.');
   render();renderMoves();maybeBot();
 }
 function passMsg(title,sub){$('passImg').src=img(title.startsWith('Black')?'bk':'wk');$('passTitle').textContent=title;$('passSub').textContent=sub;$('passModal').classList.add('on');}
@@ -1515,6 +1763,8 @@ function maybeBot(){
   if(gameMode!=='bot'||over||pos.turn===userColor)return;
   if(NET.online)return;
   if(variant==='chatgpt'){gptTurn();return;}
+  if(variant==='mirror'){const mm=mirrorBotMove();if(mm){botBusy=true;const g=++gen;renderPanels();updateStatus();setTimeout(()=>{if(g!==gen)return;botBusy=false;const zap=((mm>>>17)&C.F_DROP)&&(mm&127)===7;
+    commit(mm,!zap);},350+Math.random()*250);return;}}
   botBusy=true;const g=++gen;
   renderPanels();updateStatus();
   const t0=performance.now();
@@ -1534,11 +1784,11 @@ function maybeBot(){
 
 /* ---------- engines ---------- */
 const LEVELS={
-  easy:{mode:'noisy',depth:1,noise:230,blunder:.18},
-  medium:{mode:'noisy',depth:3,noise:45,blunder:.04},
-  hard:{mode:'id',time:1600,jitter:true},
-  max:{mode:'id',time:3500},
-  hint:{mode:'id',time:900}
+  easy:{mode:'noisy',depth:1,noise:230,blunder:.18,bookLeave:.2},
+  medium:{mode:'noisy',depth:3,noise:45,blunder:.04,bookLeave:.12},
+  hard:{mode:'id',time:1600,jitter:true,bookLeave:.07},
+  max:{mode:'id',time:3500,bookLeave:.03},
+  hint:{mode:'id',time:900,bookLeave:0}
 };
 function levelOpts(level){
   const o=Object.assign({},LEVELS[level]);
@@ -1577,7 +1827,7 @@ try{
   worker.postMessage({id:pid,ping:true});
 }catch(e){worker=null;}
 function ownEngine(opts,cb,job){
-  job=job?Object.assign({opts},job):variant==='secret'?{variant,fen:pos.fen(),moves:[],opts:Object.assign({allowed:legal().map(m=>pos.uci(m))},opts),sec:[pos.turn===0?pos.sec[0]:-1,pos.turn===1?pos.sec[1]:-1],pend:[pos.turn===0?pos.pend[0]:-1,pos.turn===1?pos.pend[1]:-1]}:variant==='bughouse'?{variant,fen:pos.fen(),moves:[],opts}:{variant,fen:startFenStr,moves:hist.map(h=>h.uci),opts};
+  job=job?Object.assign({opts},job):variant==='mirror'?{variant,fen:pos.fen(),moves:[],opts}:(variant==='secret'||variant==='impostor')?{variant,fen:pos.fen(),moves:[],opts:Object.assign({allowed:legal().map(m=>pos.uci(m))},opts),sec:[pos.turn===0?pos.sec[0]:-1,pos.turn===1?pos.sec[1]:-1],pend:[pos.turn===0?pos.pend[0]:-1,pos.turn===1?pos.pend[1]:-1]}:variant==='bughouse'?{variant,fen:pos.fen(),moves:[],opts}:{variant,fen:startFenStr,moves:hist.map(h=>h.uci),opts};
   if(!worker){localThink(job,cb);return;}
   const id=++reqId;
   pending[id]={cb,job,t:setTimeout(dropWorker,(opts.time||800)+4000)};
@@ -1735,15 +1985,15 @@ function syncSetup(){
   document.querySelectorAll('#colorSeg button').forEach(b=>b.classList.toggle('on',b.dataset.v===cfg.color));
   $('botList').innerHTML=Object.keys(BOTS).map(k=>{const b=botInfo(k,setupVariant);return '<button class="bot'+(k===cfg.level?' on':'')+'" data-v="'+k+'"><div class="avatar" style="background:'+b.bg+'">'+b.emoji+'</div><div style="min-width:0"><b>'+b.label+'</b><span>'+b.rating+' · '+b.desc+'</span></div></button>';}).join('');
   document.querySelectorAll('.bot').forEach(b=>b.onclick=()=>{cfg.level=b.dataset.v;syncSetup();});
-  const bh=setupVariant==='bughouse'||setupVariant==='chatgpt',four=isFour(setupVariant);
+  const bh=setupVariant==='bughouse'||setupVariant==='chatgpt'||setupVariant==='mirror',four=isFour(setupVariant);
   const canOnline=!NO_ONLINE.includes(setupVariant);
   $('modeSeg').querySelector('[data-v="online"]').style.display=canOnline?'':'none';
   if(cfg.mode==='online'&&!canOnline){cfg.mode='bot';document.querySelectorAll('#modeSeg button').forEach(b=>b.classList.toggle('on',b.dataset.v==='bot'));}
   $('modeSeg').parentNode.style.display=bh?'none':'';
   $('modeSeg').querySelector('[data-v="2p"]').textContent=four?'4 Players':'2 Players';
   const mode=bh?'bot':cfg.mode;
-  $('botSection').style.display=mode==='bot'&&setupVariant!=='chatgpt'?'':'none';
-  $('colorSection').style.display=(mode==='bot'||mode==='online')&&!four?'':'none';
+  $('botSection').style.display=mode==='bot'&&setupVariant!=='chatgpt'&&setupVariant!=='mirror'?'':'none';
+  $('colorSection').style.display=(mode==='bot'||mode==='online')&&!four&&setupVariant!=='mirror'?'':'none';
 }
 document.querySelectorAll('#modeSeg button').forEach(b=>b.onclick=()=>{cfg.mode=b.dataset.v;syncSetup();});
 document.querySelectorAll('#colorSeg button').forEach(b=>b.onclick=()=>{cfg.color=b.dataset.v;syncSetup();});
