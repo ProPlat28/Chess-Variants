@@ -199,6 +199,13 @@ function positional(st,pl,m){
   if(t===K&&!m.castle)v-=0.3;
   if(m.castle)v+=0.4;
   if(t===Q&&st.ply<16)v-=0.15;
+  // opening principles for the first ~8 moves each: centre pawns, develop knights and bishops, keep rooks home
+  if(st.ply<32){
+    if(t===P&&startLine(pl,m.from))v+=(cd0-cd)*0.05+(cd<=7?0.1:0);
+    if((t===N||t===B)&&!st.moved[m.from])v+=0.25;
+    if(t===R&&!m.castle)v-=0.2;
+    if(t===Q)v-=0.1;
+  }
   return v;
 }
 function quickScore(st,m,pl){
@@ -220,7 +227,8 @@ function hardPick(st,pl,L){
 function think(st,level){
   const pl=st.turn,L=legal(st,pl);
   if(!L.length)return null;
-  if(level==='easy'&&Math.random()<0.25)return L[(Math.random()*L.length)|0];
+  const early=st.ply<32;
+  if(level==='easy'&&!early&&Math.random()<0.25)return L[(Math.random()*L.length)|0];
   if(level==='impossible'){
     const cands=L.map(m=>{const r=quickScore(st,m,pl);return {m,n:r.n,s:r.s-risk(r.n,pl)*0.95};}).sort((a,b)=>b.s-a.s).slice(0,6);
     const worth=x=>material(x,pl)+(st.teams?0:x.points[pl]);
@@ -238,7 +246,7 @@ function think(st,level){
     }
     return best.m;
   }
-  const noise={easy:3,medium:1.2,hard:0.25}[level]||1;
+  const noise=({easy:3,medium:1.2,hard:0.25}[level]||1)*(early?0.15:1);
   let best=null,bestS=-1e9;
   for(const m of L){
     const {n,s:q}=quickScore(st,m,pl);
