@@ -418,6 +418,7 @@ body.four .player{height:auto;min-height:36px}
     <div class="sub" id="endSub"></div>
     <div class="mbody">
       <div class="row2"><button class="btn primary" id="rematchBtn">Rematch</button><button class="btn" id="endNewBtn">New Game</button></div>
+      <div class="row2"><button class="btn" id="reviewBtn" style="display:none">📋 Copy PGN</button></div>
       <div class="row2"><button class="btn" id="endCloseBtn" style="padding:10px;font-size:14px">View board</button></div>
     </div>
   </div>
@@ -1706,10 +1707,36 @@ function showEnd(){
   $('endSub').textContent=over.reason+' · '+VINFO[variant].name+(gameMode==='bot'?' vs '+bi.label:'');
   if(V.gpt&&GPT.msg)$('endSub').textContent=over.reason+' · ChatGPT: “'+GPT.msg+'”';
   $('rematchBtn').textContent=NET.online?'Back to room':'Rematch';
+  $('reviewBtn').style.display=canReview()?'':'none';
   $('endModal').classList.add('on');
   render();renderMoves();
   sound('end');
 }
+/* ---------- game review: the game is copied as a PGN and WintrChess opens, ready to paste it ----------
+   WintrChess has no link that takes a game, so the PGN goes to the clipboard. It only knows normal chess moves,
+   so the button shows for Classic and the variants whose moves are all normal chess moves. */
+const REVIEW_VARIANTS=['standard','kingofthehill','threecheck'];
+function canReview(){return REVIEW_VARIANTS.includes(variant)&&!G4.on&&!NET.mode4&&hist.some(h=>!h.bad);}
+function buildPGN(){
+  const bot=botInfo(gameLevel,variant).name,me=NET.online?myNick():(ACCT.user||'You');
+  let w='White',b='Black';
+  if(gameMode==='bot'){w=userColor===0?me:bot;b=userColor===0?bot:me;}
+  else if(NET.online){w=userColor===0?me:(NET.oppNick||'Opponent');b=userColor===0?(NET.oppNick||'Opponent'):me;}
+  const res=!over||over.winner==null?'*':over.winner<0?'1/2-1/2':over.winner===0?'1-0':'0-1';
+  const d=new Date(),date=d.getFullYear()+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getDate()).padStart(2,'0');
+  const clean=n=>String(n).replace(/["\\\[\]]/g,'');
+  let mv='';hist.filter(h=>!h.bad).forEach((h,i)=>{if(i%2===0)mv+=(i/2+1)+'. ';mv+=h.san.split(' ')[0]+' ';});
+  return '[Event "Chess Variants game"]\n[Site "proplat28.github.io/Chess-Variants"]\n[Date "'+date+'"]\n[White "'+clean(w)+'"]\n[Black "'+clean(b)+'"]\n[Result "'+res+'"]\n\n'+mv+res+'\n';
+}
+function copyText(t){
+  const fb=()=>{try{const a=document.createElement('textarea');a.value=t;a.style.cssText='position:fixed;opacity:0;left:-1000px';document.body.appendChild(a);a.select();const ok=document.execCommand('copy');a.remove();return ok;}catch(e){return false;}};
+  try{if(navigator.clipboard&&navigator.clipboard.writeText)return navigator.clipboard.writeText(t).then(()=>true,()=>fb());}catch(e){}
+  return Promise.resolve(fb());
+}
+$('reviewBtn').onclick=()=>{
+  const b=$('reviewBtn');
+  copyText(buildPGN()).then(ok=>{b.textContent=ok?'✅ PGN copied':'❌ Copy failed';setTimeout(()=>{b.textContent='📋 Copy PGN';},1800);});
+};
 $('endCloseBtn').onclick=()=>$('endModal').classList.remove('on');
 $('rematchBtn').onclick=()=>{$('endModal').classList.remove('on');if(NET.online||NET.game){backToRoom();return;}if(G4.on)G4.start(G4.teams);else startGame(true);};
 $('endNewBtn').onclick=()=>{$('endModal').classList.remove('on');openSetup(variant);};
