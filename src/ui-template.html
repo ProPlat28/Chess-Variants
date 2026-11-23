@@ -707,13 +707,14 @@ function renderOnline(force){
     box.querySelectorAll('input').forEach(i=>i.onkeydown=e=>{if(e.key==='Enter')acctSubmit();});
     return;
   }
-  const mmv=MM.vs.includes(cfg.variant)?cfg.variant:'standard';
+  const mmv=cfg.mmv==='any'?'any':MM.vs.includes(cfg.variant)?cfg.variant:'standard';
   box.innerHTML='<div class="acct-me">👤 <b>'+esc(ACCT.user)+'</b><button class="btn" id="acctOut">Log out</button></div>'+
-    '<div class="on-row"><select id="mmVariant" aria-label="Variant to search">'+MM.vs.map(v=>'<option value="'+v+'"'+(v===mmv?' selected':'')+'>'+esc(VINFO[v].name)+'</option>').join('')+'</select><button class="btn primary" id="mmGo">🔍 Search online</button></div>'+
+    '<div class="on-row"><select id="mmVariant" aria-label="Variant to search">'+MM.vs.map(v=>'<option value="'+v+'"'+(v===mmv?' selected':'')+'>'+esc(VINFO[v].name)+'</option>').join('').replace(/^/,'<option value="any"'+(mmv==='any'?' selected':'')+'>🎲 Any variant</option>')+'</select><button class="btn primary" id="mmGo">🔍 Search online</button></div>'+
     '<div class="on-note" style="margin:0 0 12px">Play a random player from anywhere. Or play friends with a private room code:</div>'+
     '<div class="on-row"><input id="codeIn" maxlength="8" placeholder="Room code" autocapitalize="off" autocomplete="off"><button class="btn" id="codeJoin">Join</button><button class="btn primary" id="hostBtn">Host a game</button></div>'+
     '<div class="on-note">Rooms are private. Host a game and send the code to your friends; they type it here and press Join. Every variant works online, and empty seats in 4-player games are filled with bots. Your friends also need access to this page: use Share at the top of the artifact.</div>';
   $('acctOut').onclick=()=>{mmCancel();acctSet(null);ACCT.tab='login';renderOnline(true);};
+  $('mmVariant').onchange=e=>{cfg.mmv=e.target.value==='any'?'any':'';saveCfg();};
   $('mmGo').onclick=()=>mmStart($('mmVariant').value);
   $('codeJoin').onclick=()=>{const c=$('codeIn').value.trim().toLowerCase();if(/^[a-z0-9]{4,8}$/.test(c))joinGame(c);else toast('Enter the room code your friend shared, like k7m2.');};
   $('hostBtn').onclick=()=>hostRoom(okVariant(cfg.variant)?cfg.variant:'standard');
@@ -737,12 +738,12 @@ async function leaveOnline(){
 const MM={on:false,g:null,v:'',unsub:null,t0:0,tick:0,wait:0,busy:false,
   vs:Object.keys(VINFO).filter(v=>okVariant(v)&&!SEAT_LABELS[v])};
 function mmModal(show,txt){const m=$('mmModal');if(show){document.querySelectorAll('.overlay.on').forEach(o=>o.id!=='mmModal'&&o.classList.remove('on'));m.classList.add('on');}else m.classList.remove('on');if(txt!==undefined)$('mmTxt').innerHTML=txt;}
-function mmText(){const s=Math.floor((Date.now()-MM.t0)/1000);$('mmTxt').innerHTML='Looking for a <b>'+esc(VINFO[MM.v].name)+'</b> opponent<br>'+Math.floor(s/60)+':'+String(s%60).padStart(2,'0');}
+function mmText(){const s=Math.floor((Date.now()-MM.t0)/1000);$('mmTxt').innerHTML=(MM.v==='any'?'Looking for an opponent in <b>any variant</b>':'Looking for a <b>'+esc(VINFO[MM.v].name)+'</b> opponent')+'<br>'+Math.floor(s/60)+':'+String(s%60).padStart(2,'0');}
 async function mmLeaveLobby(){if(MM.unsub){try{MM.unsub();}catch(e){}MM.unsub=null;}const g=MM.g;MM.g=null;if(g)try{await g.leave();}catch(e){}}
 async function mmStart(v){
   if(!ACCT.user){toast('Log in to play online.');return;}
   if(!NET.ready){toast('Online play is not available in this view.');return;}
-  if(!MM.vs.includes(v))v='standard';
+  if(v!=='any'&&!MM.vs.includes(v))v='standard';
   await mmCancel(true);await leaveOnline();
   MM.on=true;MM.v=v;MM.t0=Date.now();MM.busy=false;
   mmModal(true);mmText();clearInterval(MM.tick);MM.tick=setInterval(()=>{if(MM.on&&!MM.busy)mmText();},1000);
@@ -751,9 +752,9 @@ async function mmStart(v){
 async function mmLobby(){
   if(!MM.on)return;
   MM.busy=false;mmText();
-  try{MM.g=await NET.room.join('mm-'+MM.v);}catch(e){if(MM.on){mmCancel();toast('Could not reach the server. Try again.');}return;}
+  try{MM.g=await NET.room.join('mm-all');}catch(e){if(MM.on){mmCancel();toast('Could not reach the server. Try again.');}return;}
   if(!MM.on){mmLeaveLobby();return;}
-  MM.g.presence({w:1,n:myNick(),t:Date.now(),to:'',code:''}).catch(()=>{});
+  MM.g.presence({w:1,v:MM.v,n:myNick(),t:Date.now(),to:'',code:''}).catch(()=>{});
   MM.unsub=MM.g.onPeers(mmPeers,()=>{});
 }
 function mmPeers(){
@@ -762,15 +763,26 @@ function mmPeers(){
   // someone picked me: join their room
   const inv=ps.find(p=>!p.sameTab&&p.presence&&p.presence.to===me.peer&&/^[a-z0-9]{4,8}$/.test(p.presence.code||''));
   if(inv){mmJoin(inv.presence.code,cleanNick(inv.presence.n)||'Player');return;}
-  const free=ps.filter(p=>p.presence&&p.presence.w===1&&!p.presence.to&&(p.sameTab||cleanNick(p.presence.n)!==myNick())).sort((a,b)=>a.peer<b.peer?-1:1);
-  const i=free.findIndex(p=>p.sameTab);
-  if(i>=0&&i%2===0&&free[i+1])mmHost(free[i+1].peer,cleanNick(free[i+1].presence.n)||'Player');
+  const want=p=>{const v=p.sameTab?MM.v:p.presence.v;return v==='any'||MM.vs.includes(v)?v:null;};
+  const free=ps.filter(p=>p.presence&&p.presence.w===1&&!p.presence.to&&want(p)&&(p.sameTab||cleanNick(p.presence.n)!==myNick())).sort((a,b)=>a.peer<b.peer?-1:1);
+  // same pairing on every device: in id order, each player pairs with the first later player who wants a compatible variant
+  const fits=(a,b)=>a==='any'||b==='any'||a===b,used=new Set();
+  for(let i=0;i<free.length;i++){
+    if(used.has(i))continue;
+    for(let j=i+1;j<free.length;j++){
+      if(used.has(j)||!fits(want(free[i]),want(free[j])))continue;
+      used.add(i);used.add(j);
+      if(free[i].sameTab){const a=want(free[i]),b=want(free[j]);const v=a!=='any'?a:b!=='any'?b:MM.vs[(Math.random()*MM.vs.length)|0];mmHost(free[j].peer,cleanNick(free[j].presence.n)||'Player',v);}
+      break;
+    }
+    if(used.has(i)&&free[i].sameTab)return;
+  }
 }
-async function mmHost(peer,nick){
+async function mmHost(peer,nick,v){
   MM.busy=true;const code=newCode();
   mmModal(true,'Found <b>'+esc(nick)+'</b>! Starting the game…');
   MM.g.presence({to:peer,code}).catch(()=>{});
-  const v=MM.v,saved=cfg.color;cfg.color='r';NET.auto=true;
+  const saved=cfg.color;cfg.color='r';NET.auto=true;
   await hostRoom(v,true,code);cfg.color=saved;
   if(NET.role!=='host'){NET.auto=false;mmRetry();return;}
   onRoomPeers();
