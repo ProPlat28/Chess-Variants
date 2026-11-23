@@ -1633,6 +1633,9 @@ function mirrorZap(){
   const cands=[];
   for(let s=0;s<120;s++){if(s&0x88){s+=7;continue;}if(pos.b[s]===(t|ub))cands.push([Math.max(Math.abs((s>>4)-(want>>4)),Math.abs((s&7)-(want&7))),s]);}
   cands.sort((a,b)=>a[0]-b[0]);
+  // same piece type as the captured one (rook takes rook): the capturing piece itself vanishes, like a recapture would
+  const cs=(rec.m>>7)&127,ci=cands.findIndex(c=>c[1]===cs);
+  if(ci>0)cands.unshift(cands.splice(ci,1)[0]);
   const bot=pos.turn,k=pos.kings[bot],was=k>=0&&pos.attacked(k,userColor);
   // when in check, first look for a vanishing piece that gets its king out of check
   if(was)for(const [,sq] of cands){const m=7|sq<<7|C.F_DROP<<17;pos.make(m);const free=!pos.attacked(k,userColor);pos.unmake();if(free)return m;}
