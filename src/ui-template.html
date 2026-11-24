@@ -1610,11 +1610,21 @@ function cancelDuck(){if(!duckPending)return;pos.unmake();duckPending=null;legal
 // Mirror Bot: the user's last move flipped top-to-bottom, if the bot can play it
 function mirrorReply(){
   const h=hist[hist.length-1];if(!h||h.mover!==userColor)return 0;
-  const fl=s=>(7-(s>>4))*16+(s&7),m=h.m,f=(m>>>17)&15;
+  return mirrorReplyFor(h.m);
+}
+// the bot's copy of move m, which has just been played on pos (0 if the copy is impossible)
+function mirrorReplyFor(m){
+  const fl=s=>(7-(s>>4))*16+(s&7),f=(m>>>17)&15;
   // castling keeps its encoding (king square, rook square); other moves keep from/to/promotion
   const mm=(f&C.F_CASTLE)?(fl(m&127)|fl((m>>7)&127)<<7|C.F_CASTLE<<17):(fl(m&127)|fl((m>>7)&127)<<7|(m&(7<<14))|(f&(C.F_EP|C.F_DOUBLE))<<17);
   const us=pos.turn,ps=pos.gen(false);
-  const hit=ps.find(x=>(x&((1<<21)-1))===mm);if(!hit)return 0;
+  let hit=ps.find(x=>(x&((1<<21)-1))===mm);
+  if(!hit&&!(f&C.F_CASTLE)){
+    // the copy is blocked by a piece in the way: the Mirror Bot jumps over it anyway
+    const fr=mm&127,to=(mm>>7)&127,pc=pos.b[fr],tg=pos.b[to],ub=userColor?C.BL:0;
+    if(pc&&((pc&C.BL)?1:0)===us&&(!tg||(((tg&C.BL)?1:0)===userColor&&(tg&7)!==C.K)))hit=mm;
+  }
+  if(!hit)return 0;
   // same kind of piece as the one the user moved
   const ut=((m>>14)&7)?C.P:(pos.b[(m>>7)&127]&7);
   if(!(f&C.F_CASTLE)&&(pos.b[hit&127]&7)!==ut)return 0;
@@ -1654,7 +1664,26 @@ function mirrorBotMove(){
     const esc=m=>{if(!m)return false;pos.make(m);const ok=!pos.attacked(k,userColor);pos.unmake();return ok;};
     if(esc(r))return r;if(esc(z))return z;
   }
-  return r||z;
+  return r||z||mirrorQuiet();
+}
+// the copy is impossible: the bot makes a harmless move instead (no capture, no check),
+// with the same kind of piece and as close as possible to the mirrored square
+function mirrorQuiet(){
+  const h=hist[hist.length-1];if(!h||h.mover!==userColor)return 0;
+  const L=legal();if(!L.length)return 0;
+  const m=h.m,fl=s=>(7-(s>>4))*16+(s&7),want=fl((m>>7)&127);
+  const ut=((m>>14)&7)?C.P:(pos.b[(m>>7)&127]&7),uk=pos.kings[userColor];
+  let best=0,bs=1e9;
+  for(const x of L){
+    const fr=x&127,to=(x>>7)&127,fx=(x>>>17)&15;
+    if(fx&C.F_DROP)continue;
+    const cap=pos.b[to]||(fx&C.F_EP);
+    pos.make(x);const chk=uk>=0&&pos.attacked(uk,pos.turn^1);pos.unmake();
+    const d=Math.max(Math.abs((to>>4)-(want>>4)),Math.abs((to&7)-(want&7)));
+    const sc=(cap?1000:0)+(chk?500:0)+((pos.b[fr]&7)===ut?0:50)+d+Math.random()*0.5;
+    if(sc<bs){bs=sc;best=x;}
+  }
+  return best||L[0];
 }
 // can the Mirror Bot get out of this checkmate by copying the user's move?
 function mirrorRescue(){const m=mirrorBotMove(),k=pos.kings[pos.turn];if(!m||k<0)return 0;pos.make(m);const ok=!pos.attacked(k,userColor);pos.unmake();return ok?m:0;}
