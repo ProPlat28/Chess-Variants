@@ -1913,9 +1913,64 @@ async function acctRead(key){
     c.subscribe(topic,{qos:1},err=>{if(err){fin=true;c.removeListener('message',onMsg);rej(err);return;}setTimeout(end,2500);});
   });
 }
+/* ---------- moderation: only ProPlat28's admin key can ban, rename or reset a password ----------
+   The broker is public, so admin actions are signed (ECDSA P-256). Every page checks the signature
+   against the public key below and ignores anything not signed by it. The private key never leaves
+   the admin's device. */
+const ADMIN_PUB={kty:'EC',crv:'P-256',x:'ZZUe-HTyLMEtm1UrJJujiElgyqfmwPpHnRHC1bztpIE',y:'tI_YDiT874D38622oLExKss5_Dzu-L_4Hkib2H9OwW0',ext:true};
+let adminPubKey=null,adminPriv=null;
+const MOD_CACHE={};
+async function adminPub(){return adminPubKey||(adminPubKey=await crypto.subtle.importKey('jwk',ADMIN_PUB,{name:'ECDSA',namedCurve:'P-256'},false,['verify']));}
+async function adminLoadKey(str){
+  const m=/^CVADMIN-([A-Za-z0-9_-]+)$/.exec(String(str||'').trim());if(!m)return null;
+  let j;try{j=JSON.parse(atob(m[1].replace(/-/g,'+').replace(/_/g,'/')));}catch(e){return null;}
+  if(j.x!==ADMIN_PUB.x||j.y!==ADMIN_PUB.y)return null;
+  try{return await crypto.subtle.importKey('jwk',{kty:'EC',crv:'P-256',d:j.d,x:j.x,y:j.y,ext:true},{name:'ECDSA',namedCurve:'P-256'},false,['sign']);}catch(e){return null;}
+}
+(async()=>{try{const k=localStorage.getItem('chess.adminKey');if(k)adminPriv=await adminLoadKey(k);}catch(e){}if(typeof renderOnline==='function')renderOnline(true);})();
+const sigAlg={name:'ECDSA',hash:'SHA-256'};
+async function modVerify(key,raw){
+  try{const o=JSON.parse(raw);if(!o||typeof o.p!=='string'||!o.sig)return null;
+    const ok=await crypto.subtle.verify(sigAlg,await adminPub(),unb64(o.sig),new TextEncoder().encode(o.p));
+    if(!ok)return null;const m=JSON.parse(o.p);return m&&m.k===key?m:null;}catch(e){return null;}
+}
+// the newest signed moderation record for an account key, or null
+async function modRead(key){
+  const c=await acctClient(),topic=MQ_BASE+'_mod/'+key;
+  const raw=await new Promise((res,rej)=>{
+    let got='',fin=false;
+    const onMsg=(t,buf)=>{if(t!==topic)return;got=buf.toString();end();};
+    const end=()=>{if(fin)return;fin=true;c.removeListener('message',onMsg);c.unsubscribe(topic);res(got);};
+    c.on('message',onMsg);
+    c.subscribe(topic,{qos:1},err=>{if(err){fin=true;c.removeListener('message',onMsg);rej(err);return;}setTimeout(end,2500);});
+  });
+  let m=raw?await modVerify(key,raw):null;
+  // someone wiping the record can't undo a ban this page has already seen
+  const cached=MOD_CACHE[key]||(()=>{try{return JSON.parse(localStorage.getItem('chess.mod.'+key)||'null');}catch(e){return null;}})();
+  if(cached&&(!m||cached.v>m.v))m=cached;
+  if(m){MOD_CACHE[key]=m;try{localStorage.setItem('chess.mod.'+key,JSON.stringify(m));}catch(e){}}
+  return m;
+}
+async function modWrite(m){
+  if(!adminPriv)throw new Error('Admin key needed.');
+  const p=JSON.stringify(m),sig=b64(await crypto.subtle.sign(sigAlg,adminPriv,new TextEncoder().encode(p)));
+  const c=await acctClient();
+  await new Promise((res,rej)=>c.publish(MQ_BASE+'_mod/'+m.k,JSON.stringify({p,sig}),{retain:true,qos:1},e=>e?rej(e):res()));
+  MOD_CACHE[m.k]=m;try{localStorage.setItem('chess.mod.'+m.k,JSON.stringify(m));}catch(e){}
+}
+// the account as the admin left it: signed bans/renames/passwords win over the plain record
+async function acctResolve(key){
+  const [rec,m]=await Promise.all([acctRead(key),modRead(key)]);
+  if(m&&m.r)return {gone:true,to:m.r};
+  if(m&&m.b)return {banned:true,rec,m};
+  if(!rec&&!(m&&m.s))return null;
+  const out=Object.assign({},rec||{n:m.n||key});
+  if(m&&m.s&&m.h){out.s=m.s;out.h=m.h;if(m.n)out.n=m.n;}
+  return {rec:out,m};
+}
 async function acctRegister(name,pw){
   const key=acctKey(name);
-  if(await acctRead(key))throw new Error('That name is already taken. Pick another one.');
+  if(await acctRead(key)||await modRead(key))throw new Error('That name is already taken. Pick another one.');
   const salt=crypto.getRandomValues(new Uint8Array(16)),rec={n:name,s:b64(salt),h:await pwHash(pw,salt),t:Date.now()};
   const c=await acctClient();
   await new Promise((res,rej)=>c.publish(MQ_BASE+'_acct/'+key,JSON.stringify(rec),{retain:true,qos:1},e=>e?rej(e):res()));
@@ -1925,13 +1980,15 @@ async function acctRegister(name,pw){
   return back.n;
 }
 async function acctLogin(name,pw){
-  const rec=await acctRead(acctKey(name));
-  if(!rec)throw new Error('No account with that name. Create one first.');
+  const r=await acctResolve(acctKey(name));
+  if(!r||r.gone)throw new Error('No account with that name. Create one first.');
+  if(r.banned)throw new Error('This account has been banned.');
+  const rec=r.rec;
   if(await pwHash(pw,unb64(rec.s))!==rec.h)throw new Error('Wrong password.');
-  if(rec.b)throw new Error('This account has been banned.');
   return rec.n;
 }
 function acctSet(n){
+  if(n&&n!==ACCT.user)try{localStorage.setItem('chess.acctSince',String(Date.now()));}catch(e){}
   ACCT.user=n;cfg.nick=n||'';saveCfg();
   try{if(n)localStorage.setItem('chess.acct',JSON.stringify({n}));else localStorage.removeItem('chess.acct');}catch(e){}
   if(typeof renderIdeas==='function')renderIdeas();
@@ -1981,14 +2038,20 @@ function renderOnline(force){
     return;
   }
   const mmv=cfg.mmv==='any'?'any':MM.vs.includes(cfg.variant)?cfg.variant:'standard';
-  box.innerHTML='<div class="acct-me">👤 <b>'+esc(ACCT.user)+'</b>'+(isIdeaAdmin()?'<button class="btn" id="ideaViewTop">💡 Ideas</button><button class="btn" id="usersTop">👥 Users</button>':'')+'<button class="btn" id="acctOut">Log out</button></div>'+
+  box.innerHTML='<div class="acct-me">👤 <b>'+esc(ACCT.user)+'</b>'+(isIdeaAdmin()?'<button class="btn" id="ideaViewTop">💡 Ideas</button><button class="btn" id="usersTop">👥 Users</button>':needsAdminKey()?'<button class="btn" id="adminUnlock">🔐 Admin</button>':'')+'<button class="btn" id="acctOut">Log out</button></div>'+
     '<div class="on-row"><select id="mmVariant" aria-label="Variant to search">'+MM.vs.map(v=>'<option value="'+v+'"'+(v===mmv?' selected':'')+'>'+esc(VINFO[v].name)+'</option>').join('').replace(/^/,'<option value="any"'+(mmv==='any'?' selected':'')+'>🎲 Any variant</option>')+'</select><button class="btn primary" id="mmGo">🔍 Search online</button></div>'+
     '<div class="on-note" style="margin:0 0 12px">Play a random player from anywhere. Or play friends with a private room code:</div>'+
     '<div class="on-row"><input id="codeIn" maxlength="8" placeholder="Room code" autocapitalize="off" autocomplete="off"><button class="btn" id="codeJoin">Join</button><button class="btn primary" id="hostBtn">Host a game</button></div>'+
     '<div class="on-note">Rooms are private. Host a game and send the code to your friends; they type it here and press Join. Every variant works online, and empty seats in 4-player games are filled with bots. Your friends also need access to this page: use Share at the top of the artifact.</div>';
   if($('ideaViewTop'))$('ideaViewTop').onclick=ideasOpen;
   if($('usersTop'))$('usersTop').onclick=usersOpen;
-  $('acctOut').onclick=()=>{mmCancel();acctSet(null);ACCT.tab='login';renderOnline(true);};
+  if($('adminUnlock'))$('adminUnlock').onclick=async()=>{
+    const k=prompt('Paste your admin key (CVADMIN-…). It stays on this device.');if(!k)return;
+    const pk=await adminLoadKey(k);if(!pk)return toast('❌ That admin key is not valid.');
+    adminPriv=pk;try{localStorage.setItem('chess.adminKey',k.trim());}catch(e){}
+    toast('🔓 Admin unlocked on this device.');renderOnline(true);
+  };
+  $('acctOut').onclick=()=>{mmCancel();adminPriv=null;try{localStorage.removeItem('chess.adminKey');}catch(e){}acctSet(null);ACCT.tab='login';renderOnline(true);};
   $('mmVariant').onchange=e=>{cfg.mmv=e.target.value==='any'?'any':'';saveCfg();};
   $('mmGo').onclick=()=>acctCheck().then(ok=>ok&&mmStart($('mmVariant').value));
   $('codeJoin').onclick=()=>{const c=$('codeIn').value.trim().toLowerCase();if(/^[a-z0-9]{4,8}$/.test(c))acctCheck().then(ok=>ok&&joinGame(c));else toast('Enter the room code your friend shared, like k7m2.');};
@@ -3323,7 +3386,8 @@ const vcard=k=>{
 /* ---------- variant ideas: signed-in players send an idea, the owner reads them ----------
    Each idea is a retained message on the broker at _ideas/<id>: {u:name, ti:title, m:message, t:time}. */
 const IDEA_ADMIN='proplat28';
-const isIdeaAdmin=()=>!!ACCT.user&&acctKey(ACCT.user)===IDEA_ADMIN;
+const isIdeaAdmin=()=>!!ACCT.user&&acctKey(ACCT.user)===IDEA_ADMIN&&!!adminPriv;
+const needsAdminKey=()=>!!ACCT.user&&acctKey(ACCT.user)===IDEA_ADMIN&&!adminPriv;
 function renderIdeas(){
   const box=$('ideaBox');if(!box)return;
   if(!ACCT.user){box.hidden=true;box.innerHTML='';return;}
@@ -3406,18 +3470,41 @@ async function acctAll(){
 // the signed-in account still exists and isn't banned (renamed or banned players are logged out)
 async function acctCheck(){
   if(!ACCT.user)return false;
-  let rec;try{rec=await acctRead(acctKey(ACCT.user));}catch(e){return true;}   // offline: let the normal error show
-  if(rec&&!rec.b){if(rec.n!==ACCT.user)acctSet(rec.n);return true;}
+  let r;try{r=await acctResolve(acctKey(ACCT.user));}catch(e){return true;}   // offline: let the normal error show
+  const rec=r&&r.rec;
+  if(rec&&!r.banned&&!r.gone){
+    // a password reset by the admin logs out sessions that started before it
+    const since=+(localStorage.getItem('chess.acctSince')||0);
+    if(!(r.m&&r.m.s&&r.m.v>since)){if(rec.n!==ACCT.user)acctSet(rec.n);return true;}
+  }
   mmCancel&&mmCancel(true);acctSet(null);ACCT.tab='login';renderOnline(true);
-  toast(rec&&rec.b?'⛔ Your account has been banned.':'Your account was changed. Please log in again.');
+  toast(r&&r.banned?'⛔ Your account has been banned.':'Your account was changed. Please log in again.');
   return false;
 }
 let USERS=[],usersOpenKey=null;
+async function modAll(){
+  const c=await acctClient(),pre=MQ_BASE+'_mod/',raw={};
+  await new Promise((res,rej)=>{
+    let fin=false,t;
+    const onMsg=(topic,buf)=>{if(!topic.startsWith(pre))return;raw[topic.slice(pre.length)]=buf.toString();clearTimeout(t);t=setTimeout(end,800);};
+    const end=()=>{if(fin)return;fin=true;c.removeListener('message',onMsg);c.unsubscribe(pre+'+');res();};
+    c.on('message',onMsg);
+    c.subscribe(pre+'+',{qos:1},err=>{if(err){fin=true;c.removeListener('message',onMsg);rej(err);return;}t=setTimeout(end,2500);});
+  });
+  const out={};
+  for(const k in raw){const m=raw[k]?await modVerify(k,raw[k]):null;const ca=MOD_CACHE[k];out[k]=ca&&(!m||ca.v>m.v)?ca:m;if(!out[k])delete out[k];}
+  return out;
+}
 async function usersOpen(){
   if(!isIdeaAdmin())return;
   $('usersModal').classList.add('on');
   const L=$('usersList');L.innerHTML='<p style="color:var(--muted)">Loading…</p>';$('usersCount').textContent='';
-  try{USERS=await acctAll();usersRender();}
+  try{
+    const list=await acctAll(),mods=await modAll();
+    USERS=list.map(u=>{const m=mods[u.k];if(m&&m.r)return null;return Object.assign(u,{b:!!(m&&m.b),m});}).filter(Boolean);
+    for(const k in mods){const m=mods[k];if(!m.r&&m.s&&!USERS.some(u=>u.k===k))USERS.push({k,n:m.n||k,b:!!m.b,t:m.v,m});}
+    USERS.sort((a,b)=>a.n.toLowerCase()<b.n.toLowerCase()?-1:1);usersRender();
+  }
   catch(e){L.innerHTML='<p style="color:var(--danger)">Could not reach the server.</p>';}
 }
 function usersRender(){
@@ -3443,23 +3530,29 @@ async function userAct(k,act,card,btn){
   const u=USERS.find(x=>x.k===k);if(!u)return;
   btn.disabled=true;
   try{
-    // always start from the stored record, so two changes in a row don't undo each other
-    const rec=await acctRead(k);if(!rec)throw new Error('This account no longer exists.');
+    const r=await acctResolve(k);if(!r||r.gone)throw new Error('This account no longer exists.');
+    const base=r.rec||{n:u.n},prev=r.m||{};
+    const m={k,n:base.n,b:!!prev.b,v:Date.now()};
+    if(prev.s){m.s=prev.s;m.h=prev.h;}
     if(act==='ban'){
       if(k===IDEA_ADMIN)throw new Error("You can't ban yourself.");
-      rec.b=!rec.b;await acctPut(k,rec);Object.assign(u,rec);toast(rec.b?'⛔ '+rec.n+' is banned.':'✅ '+rec.n+' is unbanned.');
+      m.b=!m.b;await modWrite(m);toast(m.b?'⛔ '+m.n+' is banned.':'✅ '+m.n+' is unbanned.');u.b=m.b;u.m=m;
     }else if(act==='pw'){
       const pw=card.querySelector('[data-in="pw"]').value;
       if(pw.length<6)throw new Error('The password needs at least 6 characters.');
-      const salt=crypto.getRandomValues(new Uint8Array(16));rec.s=b64(salt);rec.h=await pwHash(pw,salt);
-      await acctPut(k,rec);Object.assign(u,rec);toast('🔑 Password changed for '+rec.n+'.');
+      const salt=crypto.getRandomValues(new Uint8Array(16));m.s=b64(salt);m.h=await pwHash(pw,salt);
+      await modWrite(m);u.m=m;toast('🔑 Password changed for '+m.n+'.');
     }else if(act==='name'){
       const nn=card.querySelector('[data-in="name"]').value.trim(),nk=acctKey(nn);
       if(!acctNameOk(nn))throw new Error('Names are 3–16 letters, numbers, _ or -.');
       if(k===IDEA_ADMIN&&nk!==IDEA_ADMIN)throw new Error("Your own account must stay ProPlat28 to keep admin access.");
-      if(nk!==k&&await acctRead(nk))throw new Error('That name is already taken.');
-      rec.n=nn;await acctPut(nk,rec);if(nk!==k)await acctPut(k,null);
-      Object.assign(u,rec);u.k=nk;usersOpenKey=nk;if(k===acctKey(ACCT.user))acctSet(nn);
+      if(nk!==k&&(await acctRead(nk)||await modRead(nk)))throw new Error('That name is already taken.');
+      // the new name carries the signed password, the old one is marked as renamed
+      const nm={k:nk,n:nn,b:m.b,s:base.s,h:base.h,v:Date.now()};
+      await modWrite(nm);
+      await acctPut(nk,{n:nn,s:base.s,h:base.h,t:base.t||Date.now()});
+      if(nk!==k){await modWrite({k,r:nn,v:Date.now()});await acctPut(k,null);}
+      Object.assign(u,{k:nk,n:nn,m:nm});usersOpenKey=nk;if(k===acctKey(ACCT.user))acctSet(nn);
       USERS.sort((a,b)=>a.n.toLowerCase()<b.n.toLowerCase()?-1:1);toast('✏️ Renamed to '+nn+'.');
     }
     usersRender();
