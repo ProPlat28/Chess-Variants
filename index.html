@@ -140,6 +140,17 @@ body.lobby{display:block;height:auto;min-height:100%}
 .on-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
 .on-lab{font-size:13px;color:var(--muted);font-weight:700;min-width:80px}
 .online input{flex:1;min-width:0;background:var(--panel2);border:1px solid var(--raise2);color:var(--text);border-radius:8px;padding:9px 11px;font:inherit;font-size:15px;user-select:text;-webkit-user-select:text}
+.ideas{background:var(--panel);border-radius:10px;padding:14px;margin-top:22px}
+.ideas input,.ideas textarea,#ideasList textarea{width:100%;box-sizing:border-box;background:var(--panel2);border:1px solid var(--raise2);color:var(--text);border-radius:8px;padding:9px 11px;font:inherit;font-size:15px;user-select:text;-webkit-user-select:text;margin-bottom:8px}
+.ideas textarea{resize:vertical;min-height:80px}
+.ideas p{margin:0 0 10px;color:var(--muted);font-size:14px}
+.idea{background:var(--panel2);border-radius:8px;padding:10px 12px}
+.idea-head{display:flex;align-items:center;gap:8px;cursor:pointer}
+.idea-head .chev{color:var(--muted)}
+.idea-body{margin-top:8px}
+.idea h3{flex:1;margin:0;font-size:15px;word-break:break-word}
+.idea .who{color:var(--muted);font-size:12px;margin-bottom:6px}
+.idea .txt{white-space:pre-wrap;word-break:break-word;font-size:14px;user-select:text;-webkit-user-select:text}
 .online input:focus{outline:2px solid var(--accent);outline-offset:0}
 .og{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:9px 10px;border-radius:8px;background:var(--panel2);margin-bottom:6px}
 .og:hover{background:#2b2925}
@@ -362,6 +373,7 @@ body.four .player{height:auto;min-height:36px}
     <p class="home-sub">Classic chess, the variants from Lichess and Chess.com, the ancient games chess grew from, and a few new ideas. Every one has bots from Easy to Impossible, or play friends on the same device.</p>
     <section class="online" hidden><h2 class="vgroup" style="margin-top:0">Play online</h2><div id="onlineBox"></div></section>
     <div class="vgrid" id="vgrid"></div>
+    <section class="ideas" id="ideaBox" hidden></section>
     <p class="home-foot">Variants marked <span class="tag sf">Stockfish</span> use Stockfish on Impossible; the rest use the strongest built-in engine. Chess.com also hosts dozens of community variants, such as Spell Chess, Seirawan and Capablanca, that are not included here.</p>
   </div>
 </div>
@@ -439,6 +451,15 @@ body.four .player{height:auto;min-height:36px}
   </div>
 </div>
 
+<div class="overlay" id="ideasModal">
+  <div class="modal">
+    <h2>💡 Ideas of people</h2>
+    <div class="mbody">
+      <div id="ideasList"></div>
+      <div class="row2"><button class="btn" id="ideasRefresh" style="flex:1">🔄 Refresh</button><button class="btn" id="ideasClose" style="flex:1">Close</button></div>
+    </div>
+  </div>
+</div>
 <div class="overlay" id="mmModal">
   <div class="modal">
     <h2>Searching…</h2>
@@ -1898,6 +1919,7 @@ async function acctLogin(name,pw){
 function acctSet(n){
   ACCT.user=n;cfg.nick=n||'';saveCfg();
   try{if(n)localStorage.setItem('chess.acct',JSON.stringify({n}));else localStorage.removeItem('chess.acct');}catch(e){}
+  if(typeof renderIdeas==='function')renderIdeas();
 }
 if(ACCT.user)cfg.nick=ACCT.user;
 async function acctSubmit(){
@@ -1944,11 +1966,12 @@ function renderOnline(force){
     return;
   }
   const mmv=cfg.mmv==='any'?'any':MM.vs.includes(cfg.variant)?cfg.variant:'standard';
-  box.innerHTML='<div class="acct-me">👤 <b>'+esc(ACCT.user)+'</b><button class="btn" id="acctOut">Log out</button></div>'+
+  box.innerHTML='<div class="acct-me">👤 <b>'+esc(ACCT.user)+'</b>'+(isIdeaAdmin()?'<button class="btn" id="ideaViewTop">💡 Ideas of people</button>':'')+'<button class="btn" id="acctOut">Log out</button></div>'+
     '<div class="on-row"><select id="mmVariant" aria-label="Variant to search">'+MM.vs.map(v=>'<option value="'+v+'"'+(v===mmv?' selected':'')+'>'+esc(VINFO[v].name)+'</option>').join('').replace(/^/,'<option value="any"'+(mmv==='any'?' selected':'')+'>🎲 Any variant</option>')+'</select><button class="btn primary" id="mmGo">🔍 Search online</button></div>'+
     '<div class="on-note" style="margin:0 0 12px">Play a random player from anywhere. Or play friends with a private room code:</div>'+
     '<div class="on-row"><input id="codeIn" maxlength="8" placeholder="Room code" autocapitalize="off" autocomplete="off"><button class="btn" id="codeJoin">Join</button><button class="btn primary" id="hostBtn">Host a game</button></div>'+
     '<div class="on-note">Rooms are private. Host a game and send the code to your friends; they type it here and press Join. Every variant works online, and empty seats in 4-player games are filled with bots. Your friends also need access to this page: use Share at the top of the artifact.</div>';
+  if($('ideaViewTop'))$('ideaViewTop').onclick=ideasOpen;
   $('acctOut').onclick=()=>{mmCancel();acctSet(null);ACCT.tab='login';renderOnline(true);};
   $('mmVariant').onchange=e=>{cfg.mmv=e.target.value==='any'?'any':'';saveCfg();};
   $('mmGo').onclick=()=>mmStart($('mmVariant').value);
@@ -2982,7 +3005,7 @@ function showEnd(){
 /* ---------- game review: the game is copied as a PGN and WintrChess opens, ready to paste it ----------
    WintrChess has no link that takes a game, so the PGN goes to the clipboard. It only knows normal chess moves,
    so the button shows for Classic and the variants whose moves are all normal chess moves. */
-const REVIEW_VARIANTS=['standard','kingofthehill','threecheck'];
+const REVIEW_VARIANTS=['standard'];
 function canReview(){return REVIEW_VARIANTS.includes(variant)&&!G4.on&&!NET.mode4&&hist.some(h=>!h.bad);}
 function buildPGN(){
   const bot=botInfo(gameLevel,variant).name,me=NET.online?myNick():(ACCT.user||'You');
@@ -3281,6 +3304,71 @@ const vcard=k=>{
   const v=VINFO[k];
   return '<button class="vcard" data-v="'+k+'"><span class="vicon">'+iconHTML(v.icon)+'</span><span class="vtext"><b>'+v.name+'</b><span>'+v.short+'</span></span><span class="tags">'+v.src.map(s=>'<span class="tag">'+s+'</span>').join('')+(v.sf?'<span class="tag sf">Stockfish</span>':'')+'</span></button>';
 };
+/* ---------- variant ideas: signed-in players send an idea, the owner reads them ----------
+   Each idea is a retained message on the broker at _ideas/<id>: {u:name, ti:title, m:message, t:time}. */
+const IDEA_ADMIN='proplat28';
+const isIdeaAdmin=()=>!!ACCT.user&&acctKey(ACCT.user)===IDEA_ADMIN;
+function renderIdeas(){
+  const box=$('ideaBox');if(!box)return;
+  if(!ACCT.user){box.hidden=true;box.innerHTML='';return;}
+  box.hidden=false;
+  box.innerHTML='<h2 class="vgroup" style="margin-top:0">💡 Suggest a variant</h2>'+
+    '<p>Got an idea for a new variant? Send it to ProPlat28.</p>'+
+    '<input id="ideaTitle" maxlength="60" placeholder="Title" autocomplete="off">'+
+    '<textarea id="ideaMsg" maxlength="1500" placeholder="Describe how it works…"></textarea>'+
+    '<div class="row2"><button class="btn primary" id="ideaSend" style="flex:1">📨 Send idea</button></div>';
+  $('ideaSend').onclick=ideaSend;
+}
+async function ideaSend(){
+  const ti=$('ideaTitle').value.trim(),m=$('ideaMsg').value.trim(),btn=$('ideaSend');
+  if(!ti)return toast('Add a title.');
+  if(m.length<5)return toast('Write a short message about your idea.');
+  btn.disabled=true;btn.textContent='Sending…';
+  try{
+    const c=await acctClient(),id=Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+    const rec={u:ACCT.user,ti:ti.slice(0,60),m:m.slice(0,1500),t:Date.now()};
+    await new Promise((res,rej)=>c.publish(MQ_BASE+'_ideas/'+id,JSON.stringify(rec),{retain:true,qos:1},e=>e?rej(e):res()));
+    $('ideaTitle').value='';$('ideaMsg').value='';toast('✅ Idea sent. Thanks!');
+  }catch(e){toast('Could not send. Check your connection and try again.');}
+  btn.disabled=false;btn.textContent='📨 Send idea';
+}
+// collect every stored idea (retained messages arrive right after subscribing)
+async function ideasLoad(){
+  const c=await acctClient(),pre=MQ_BASE+'_ideas/',all={};
+  return new Promise((res,rej)=>{
+    let fin=false,t;
+    const onMsg=(topic,buf)=>{if(!topic.startsWith(pre))return;const id=topic.slice(pre.length);
+      try{const s=buf.toString();if(s){const o=JSON.parse(s);if(o&&o.ti)all[id]=o;}else delete all[id];}catch(e){}
+      clearTimeout(t);t=setTimeout(end,800);};
+    const end=()=>{if(fin)return;fin=true;c.removeListener('message',onMsg);c.unsubscribe(pre+'+');
+      res(Object.entries(all).map(([id,o])=>({id,...o})).sort((a,b)=>b.t-a.t));};
+    c.on('message',onMsg);
+    c.subscribe(pre+'+',{qos:1},err=>{if(err){fin=true;c.removeListener('message',onMsg);rej(err);return;}t=setTimeout(end,2500);});
+  });
+}
+async function ideasOpen(){
+  if(!isIdeaAdmin())return;
+  $('ideasModal').classList.add('on');
+  const L=$('ideasList');L.innerHTML='<p style="color:var(--muted)">Loading…</p>';
+  try{
+    const list=await ideasLoad();
+    if(!list.length){L.innerHTML='<p style="color:var(--muted)">No ideas yet.</p>';return;}
+    L.innerHTML='<div style="display:flex;flex-direction:column;gap:10px">'+list.map(o=>
+      '<div class="idea"><div class="idea-head" role="button" tabindex="0"><h3>'+esc(o.ti)+' <span class="who">by '+esc(o.u||'?')+'</span></h3><span class="chev">▸</span></div>'+
+      '<div class="idea-body" hidden><div class="who">'+esc(new Date(o.t).toLocaleString())+'</div>'+
+      '<div class="txt">'+esc(o.m||'')+'</div>'+
+      '<div class="row2" style="margin-top:8px"><button class="btn" data-del="'+esc(o.id)+'">🗑️ Delete</button></div></div></div>').join('')+'</div>';
+    L.querySelectorAll('.idea-head').forEach(h=>{const tg=()=>{const b=h.nextElementSibling;b.hidden=!b.hidden;h.querySelector('.chev').textContent=b.hidden?'▸':'▾';};h.onclick=tg;h.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tg();}};});
+    L.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{
+      b.disabled=true;
+      try{const c=await acctClient();await new Promise((r,j)=>c.publish(MQ_BASE+'_ideas/'+b.dataset.del,'',{retain:true,qos:1},e=>e?j(e):r()));b.closest('.idea').remove();}
+      catch(e){b.disabled=false;toast('Could not delete.');}
+    });
+  }catch(e){L.innerHTML='<p style="color:var(--danger)">Could not reach the server.</p>';}
+}
+$('ideasRefresh').onclick=ideasOpen;
+$('ideasClose').onclick=()=>$('ideasModal').classList.remove('on');
+renderIdeas();
 $('vgrid').innerHTML=VGROUPS.map(([title,keys])=>'<h2 class="vgroup">'+title+'</h2>'+keys.map(vcard).join('')).join('');
 document.querySelectorAll('.vcard').forEach(c=>c.onclick=()=>{unlockAudio();openSetup(c.dataset.v);});
 
