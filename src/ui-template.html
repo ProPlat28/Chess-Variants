@@ -143,6 +143,10 @@ body.lobby{display:block;height:auto;min-height:100%}
 .idea-head{display:flex;align-items:center;gap:8px;cursor:pointer}
 .idea-head .chev{color:var(--muted)}
 .idea-body{margin-top:8px}
+.btn.danger{background:var(--danger);color:#fff}
+.ban-tag{background:var(--danger);color:#fff;border-radius:6px;padding:1px 6px;font-size:11px;font-weight:700;margin-left:6px}
+#usersList input{width:100%;box-sizing:border-box;background:var(--panel);border:1px solid var(--raise2);color:var(--text);border-radius:8px;padding:8px 10px;font:inherit;font-size:14px;user-select:text;-webkit-user-select:text}
+.u-row{display:flex;gap:6px;margin-top:8px}.u-row input{flex:1;min-width:0}
 .idea h3{flex:1;margin:0;font-size:15px;word-break:break-word}
 .idea .who{color:var(--muted);font-size:12px;margin-bottom:6px}
 .idea .txt{white-space:pre-wrap;word-break:break-word;font-size:14px;user-select:text;-webkit-user-select:text}
@@ -453,6 +457,16 @@ body.four .player{height:auto;min-height:36px}
     </div>
   </div>
 </div>
+<div class="overlay" id="usersModal">
+  <div class="modal">
+    <h2>👥 Users</h2>
+    <div class="mbody">
+      <div id="usersCount" style="color:var(--muted);font-size:13px"></div>
+      <div id="usersList"></div>
+      <div class="row2"><button class="btn" id="usersRefresh" style="flex:1">🔄 Refresh</button><button class="btn" id="usersClose" style="flex:1">Close</button></div>
+    </div>
+  </div>
+</div>
 <div class="overlay" id="mmModal">
   <div class="modal">
     <h2>Searching…</h2>
@@ -679,6 +693,7 @@ async function acctLogin(name,pw){
   const rec=await acctRead(acctKey(name));
   if(!rec)throw new Error('No account with that name. Create one first.');
   if(await pwHash(pw,unb64(rec.s))!==rec.h)throw new Error('Wrong password.');
+  if(rec.b)throw new Error('This account has been banned.');
   return rec.n;
 }
 function acctSet(n){
@@ -731,17 +746,18 @@ function renderOnline(force){
     return;
   }
   const mmv=cfg.mmv==='any'?'any':MM.vs.includes(cfg.variant)?cfg.variant:'standard';
-  box.innerHTML='<div class="acct-me">👤 <b>'+esc(ACCT.user)+'</b>'+(isIdeaAdmin()?'<button class="btn" id="ideaViewTop">💡 Ideas of people</button>':'')+'<button class="btn" id="acctOut">Log out</button></div>'+
+  box.innerHTML='<div class="acct-me">👤 <b>'+esc(ACCT.user)+'</b>'+(isIdeaAdmin()?'<button class="btn" id="ideaViewTop">💡 Ideas</button><button class="btn" id="usersTop">👥 Users</button>':'')+'<button class="btn" id="acctOut">Log out</button></div>'+
     '<div class="on-row"><select id="mmVariant" aria-label="Variant to search">'+MM.vs.map(v=>'<option value="'+v+'"'+(v===mmv?' selected':'')+'>'+esc(VINFO[v].name)+'</option>').join('').replace(/^/,'<option value="any"'+(mmv==='any'?' selected':'')+'>🎲 Any variant</option>')+'</select><button class="btn primary" id="mmGo">🔍 Search online</button></div>'+
     '<div class="on-note" style="margin:0 0 12px">Play a random player from anywhere. Or play friends with a private room code:</div>'+
     '<div class="on-row"><input id="codeIn" maxlength="8" placeholder="Room code" autocapitalize="off" autocomplete="off"><button class="btn" id="codeJoin">Join</button><button class="btn primary" id="hostBtn">Host a game</button></div>'+
     '<div class="on-note">Rooms are private. Host a game and send the code to your friends; they type it here and press Join. Every variant works online, and empty seats in 4-player games are filled with bots. Your friends also need access to this page: use Share at the top of the artifact.</div>';
   if($('ideaViewTop'))$('ideaViewTop').onclick=ideasOpen;
+  if($('usersTop'))$('usersTop').onclick=usersOpen;
   $('acctOut').onclick=()=>{mmCancel();acctSet(null);ACCT.tab='login';renderOnline(true);};
   $('mmVariant').onchange=e=>{cfg.mmv=e.target.value==='any'?'any':'';saveCfg();};
-  $('mmGo').onclick=()=>mmStart($('mmVariant').value);
-  $('codeJoin').onclick=()=>{const c=$('codeIn').value.trim().toLowerCase();if(/^[a-z0-9]{4,8}$/.test(c))joinGame(c);else toast('Enter the room code your friend shared, like k7m2.');};
-  $('hostBtn').onclick=()=>hostRoom(okVariant(cfg.variant)?cfg.variant:'standard');
+  $('mmGo').onclick=()=>acctCheck().then(ok=>ok&&mmStart($('mmVariant').value));
+  $('codeJoin').onclick=()=>{const c=$('codeIn').value.trim().toLowerCase();if(/^[a-z0-9]{4,8}$/.test(c))acctCheck().then(ok=>ok&&joinGame(c));else toast('Enter the room code your friend shared, like k7m2.');};
+  $('hostBtn').onclick=()=>acctCheck().then(ok=>ok&&hostRoom(okVariant(cfg.variant)?cfg.variant:'standard'));
 }
 function newCode(){const a='abcdefghjkmnpqrstuvwxyz23456789';let s='';for(let i=0;i<4;i++)s+=a[(Math.random()*a.length)|0];return s;}
 function gp(patch){if(NET.game)NET.game.presence(patch).catch(()=>{});}
@@ -2134,6 +2150,89 @@ async function ideasOpen(){
 $('ideasRefresh').onclick=ideasOpen;
 $('ideasClose').onclick=()=>$('ideasModal').classList.remove('on');
 renderIdeas();
+/* ---------- user admin (ProPlat28 only): list, ban, change password, rename ---------- */
+async function acctPut(key,rec){
+  const c=await acctClient();
+  return new Promise((res,rej)=>c.publish(MQ_BASE+'_acct/'+key,rec?JSON.stringify(rec):'',{retain:true,qos:1},e=>e?rej(e):res()));
+}
+async function acctAll(){
+  const c=await acctClient(),pre=MQ_BASE+'_acct/',all={};
+  return new Promise((res,rej)=>{
+    let fin=false,t;
+    const onMsg=(topic,buf)=>{if(!topic.startsWith(pre))return;const k=topic.slice(pre.length);
+      try{const s=buf.toString();if(s){const o=JSON.parse(s);if(o&&o.n&&o.h)all[k]=o;}else delete all[k];}catch(e){}
+      clearTimeout(t);t=setTimeout(end,800);};
+    const end=()=>{if(fin)return;fin=true;c.removeListener('message',onMsg);c.unsubscribe(pre+'+');
+      res(Object.entries(all).map(([k,o])=>({k,...o})).sort((a,b)=>a.n.toLowerCase()<b.n.toLowerCase()?-1:1));};
+    c.on('message',onMsg);
+    c.subscribe(pre+'+',{qos:1},err=>{if(err){fin=true;c.removeListener('message',onMsg);rej(err);return;}t=setTimeout(end,2500);});
+  });
+}
+// the signed-in account still exists and isn't banned (renamed or banned players are logged out)
+async function acctCheck(){
+  if(!ACCT.user)return false;
+  let rec;try{rec=await acctRead(acctKey(ACCT.user));}catch(e){return true;}   // offline: let the normal error show
+  if(rec&&!rec.b){if(rec.n!==ACCT.user)acctSet(rec.n);return true;}
+  mmCancel&&mmCancel(true);acctSet(null);ACCT.tab='login';renderOnline(true);
+  toast(rec&&rec.b?'⛔ Your account has been banned.':'Your account was changed. Please log in again.');
+  return false;
+}
+let USERS=[],usersOpenKey=null;
+async function usersOpen(){
+  if(!isIdeaAdmin())return;
+  $('usersModal').classList.add('on');
+  const L=$('usersList');L.innerHTML='<p style="color:var(--muted)">Loading…</p>';$('usersCount').textContent='';
+  try{USERS=await acctAll();usersRender();}
+  catch(e){L.innerHTML='<p style="color:var(--danger)">Could not reach the server.</p>';}
+}
+function usersRender(){
+  const L=$('usersList');
+  $('usersCount').textContent=USERS.length+' account'+(USERS.length===1?'':'s')+' · '+USERS.filter(u=>u.b).length+' banned';
+  if(!USERS.length){L.innerHTML='<p style="color:var(--muted)">No accounts yet.</p>';return;}
+  L.innerHTML='<div style="display:flex;flex-direction:column;gap:8px">'+USERS.map(u=>{
+    const me=u.k===IDEA_ADMIN,open=usersOpenKey===u.k;
+    return '<div class="idea" data-k="'+esc(u.k)+'"><div class="idea-head" role="button" tabindex="0"><h3>'+esc(u.n)+(u.b?'<span class="ban-tag">BANNED</span>':'')+(me?' <span class="who">(you)</span>':'')+'</h3><span class="chev">'+(open?'▾':'▸')+'</span></div>'+
+      '<div class="idea-body"'+(open?'':' hidden')+'><div class="who">Joined '+esc(u.t?new Date(u.t).toLocaleDateString():'?')+'</div>'+
+      (me?'':'<div class="u-row"><button class="btn'+(u.b?'':' danger')+'" data-act="ban" style="flex:1">'+(u.b?'✅ Unban':'⛔ Ban')+'</button></div>')+
+      '<div class="u-row"><input data-in="pw" type="text" placeholder="New password (6+)" autocomplete="off"><button class="btn" data-act="pw">🔑 Set</button></div>'+
+      '<div class="u-row"><input data-in="name" maxlength="16" placeholder="New name" autocomplete="off" autocapitalize="off"><button class="btn" data-act="name">✏️ Rename</button></div>'+
+      '</div></div>';}).join('')+'</div>';
+  L.querySelectorAll('.idea').forEach(card=>{
+    const k=card.dataset.k,h=card.querySelector('.idea-head');
+    const tg=()=>{const b=card.querySelector('.idea-body');b.hidden=!b.hidden;usersOpenKey=b.hidden?null:k;h.querySelector('.chev').textContent=b.hidden?'▸':'▾';};
+    h.onclick=tg;h.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tg();}};
+    card.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>userAct(k,b.dataset.act,card,b));
+  });
+}
+async function userAct(k,act,card,btn){
+  const u=USERS.find(x=>x.k===k);if(!u)return;
+  btn.disabled=true;
+  try{
+    // always start from the stored record, so two changes in a row don't undo each other
+    const rec=await acctRead(k);if(!rec)throw new Error('This account no longer exists.');
+    if(act==='ban'){
+      if(k===IDEA_ADMIN)throw new Error("You can't ban yourself.");
+      rec.b=!rec.b;await acctPut(k,rec);Object.assign(u,rec);toast(rec.b?'⛔ '+rec.n+' is banned.':'✅ '+rec.n+' is unbanned.');
+    }else if(act==='pw'){
+      const pw=card.querySelector('[data-in="pw"]').value;
+      if(pw.length<6)throw new Error('The password needs at least 6 characters.');
+      const salt=crypto.getRandomValues(new Uint8Array(16));rec.s=b64(salt);rec.h=await pwHash(pw,salt);
+      await acctPut(k,rec);Object.assign(u,rec);toast('🔑 Password changed for '+rec.n+'.');
+    }else if(act==='name'){
+      const nn=card.querySelector('[data-in="name"]').value.trim(),nk=acctKey(nn);
+      if(!acctNameOk(nn))throw new Error('Names are 3–16 letters, numbers, _ or -.');
+      if(k===IDEA_ADMIN&&nk!==IDEA_ADMIN)throw new Error("Your own account must stay ProPlat28 to keep admin access.");
+      if(nk!==k&&await acctRead(nk))throw new Error('That name is already taken.');
+      rec.n=nn;await acctPut(nk,rec);if(nk!==k)await acctPut(k,null);
+      Object.assign(u,rec);u.k=nk;usersOpenKey=nk;if(k===acctKey(ACCT.user))acctSet(nn);
+      USERS.sort((a,b)=>a.n.toLowerCase()<b.n.toLowerCase()?-1:1);toast('✏️ Renamed to '+nn+'.');
+    }
+    usersRender();
+  }catch(e){btn.disabled=false;toast(e&&e.message&&!/offline|timeout|mqtt/i.test(e.message)?e.message:'Could not reach the server.');}
+}
+$('usersRefresh').onclick=usersOpen;
+$('usersClose').onclick=()=>$('usersModal').classList.remove('on');
+if(ACCT.user)setTimeout(()=>acctCheck().catch(()=>{}),1500);
 $('vgrid').innerHTML=VGROUPS.map(([title,keys])=>'<h2 class="vgroup">'+title+'</h2>'+keys.map(vcard).join('')).join('');
 document.querySelectorAll('.vcard').forEach(c=>c.onclick=()=>{unlockAudio();openSetup(c.dataset.v);});
 
